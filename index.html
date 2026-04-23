@@ -1,0 +1,3351 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EDR CSV Process Tree Viewer</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a2d;
+      --panel-2: #18223a;
+      --line: #2b395c;
+      --text: #e7ecf7;
+      --muted: #9db0d7;
+      --accent: #6bb8ff;
+      --accent-2: #7ef0b8;
+      --danger: #ff8d8d;
+      --warn: #ffd37a;
+      --shadow: rgba(0, 0, 0, 0.28);
+      --chip: #22314f;
+      --good: #56d6a4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #0a0f1d, #0e1425 30%, #10192c);
+    }
+    h1, h2, h3 { margin: 0; font-weight: 700; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 15px; }
+    p { margin: 0; }
+    button, select, input, textarea {
+      font: inherit;
+    }
+    button {
+      background: linear-gradient(180deg, #2a7cc8, #2164a2);
+      border: 1px solid #5aa9ed;
+      color: white;
+      border-radius: 8px;
+      padding: 9px 14px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px var(--shadow);
+    }
+    button.secondary {
+      background: linear-gradient(180deg, #22314f, #1b2740);
+      border-color: #49608c;
+      color: var(--text);
+    }
+    button.ghost {
+      background: transparent;
+      border-color: var(--line);
+      box-shadow: none;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      background: #0e1628;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #54b4ff;
+    }
+    .app {
+      position: relative;
+      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: min(470px, calc(100vw - 28px));
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(14, 20, 37, 0.98), rgba(11, 17, 32, 0.98));
+      padding: 18px;
+      overflow: auto;
+      z-index: 80;
+      box-shadow: 0 20px 48px var(--shadow);
+      transform: translateX(0);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    body.settings-collapsed .sidebar {
+      transform: translateX(calc(-100% - 12px));
+      box-shadow: none;
+    }
+    .sidebar-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 70;
+      background: rgba(4, 10, 20, 0.42);
+      backdrop-filter: blur(2px);
+    }
+    body.settings-collapsed .sidebar-backdrop {
+      display: none;
+    }
+    .settings-open-btn {
+      position: fixed;
+      top: 14px;
+      right: 18px;
+      z-index: 65;
+      padding: 9px 14px;
+    }
+    body:not(.settings-collapsed) .settings-open-btn {
+      display: none;
+    }
+    .content {
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      min-width: 0;
+      min-height: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .hero {
+      padding: 18px 20px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .hero p {
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+    .section {
+      background: rgba(18, 26, 45, 0.78);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 22px var(--shadow);
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .section-desc {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+    .grid-2, .grid-3 {
+      display: grid;
+      gap: 10px;
+    }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .inline.tight { gap: 6px; }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .status-bar {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .progress-wrap {
+      width: 100%;
+      height: 10px;
+      background: #0c1323;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #3e91db, #66d1ff);
+    }
+    .status-text {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .preview-wrap {
+      max-height: 270px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0c1323;
+    }
+    table.preview {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    table.preview th,
+    table.preview td {
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      border-right: 1px solid rgba(255,255,255,0.06);
+      padding: 6px 8px;
+      vertical-align: top;
+      text-align: left;
+      white-space: nowrap;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    table.preview th {
+      position: sticky;
+      top: 0;
+      background: #13203a;
+      z-index: 2;
+    }
+    .chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--chip);
+      border: 1px solid #34466c;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+    .summary {
+      padding: 10px 20px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: grid;
+      gap: 10px;
+    }
+    .summary-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .metric {
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      background: rgba(18, 28, 48, 0.8);
+      min-height: 76px;
+    }
+    .metric .name { font-size: 12px; color: var(--muted); }
+    .metric .value { font-size: 21px; font-weight: 700; margin-top: 4px; }
+    .toolbar {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: minmax(220px, 320px) minmax(220px, 320px) 1fr auto;
+      align-items: end;
+      padding: 12px 20px 0;
+    }
+    .viewer-layout {
+      position: relative;
+      min-height: 220px;
+      height: calc(100vh - var(--viewer-top-offset, 250px) - 12px);
+      display: block;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .viewer {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      background: radial-gradient(circle at 20% 0%, rgba(45,83,145,0.22), transparent 40%), #0a101f;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .viewer-controls {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      z-index: 10;
+    }
+    .viewer-controls button {
+      padding: 8px 10px;
+    }
+    .canvas-badge {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      z-index: 10;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.82);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+      font-size: 12px;
+      backdrop-filter: blur(8px);
+    }
+    .details {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      bottom: 12px;
+      width: min(400px, calc(100vw - 24px));
+      max-width: calc(100% - 24px);
+      max-height: min(calc(100% - 24px), calc(100vh - 24px));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(17, 24, 41, 0.985), rgba(12, 18, 31, 1));
+      padding: 18px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      min-height: 0;
+      opacity: 1;
+      z-index: 80;
+      box-shadow: 0 18px 48px var(--shadow);
+      transform: translateX(0);
+      transition: transform 0.18s ease, opacity 0.18s ease, padding 0.18s ease, border-width 0.18s ease;
+    }
+    body.details-collapsed .details {
+      padding: 0;
+      border-width: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+      transform: translateX(calc(100% + 18px));
+    }
+    .details-open-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 81;
+      display: none;
+      padding: 8px 12px;
+    }
+    body.details-collapsed .details-open-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .details-header {
+      display: grid;
+      gap: 4px;
+      padding: 2px 2px 0;
+    }
+    .detail-card {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.03);
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .detail-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+    .detail-card-body {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .detail-toggle {
+      padding: 4px 10px;
+      min-width: 64px;
+      flex: 0 0 auto;
+    }
+    .detail-card.collapsed {
+      gap: 0;
+    }
+    .detail-card.collapsed .detail-card-body {
+      display: none;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 6px 10px;
+      font-size: 13px;
+      align-items: start;
+    }
+    .detail-grid dt { color: var(--muted); }
+    .detail-grid dd { margin: 0; word-break: break-word; }
+    .warning-box, .info-box {
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .warning-box {
+      background: rgba(255, 197, 107, 0.08);
+      border: 1px solid rgba(255, 197, 107, 0.32);
+      color: #ffe0a0;
+    }
+    .info-box {
+      background: rgba(107, 184, 255, 0.08);
+      border: 1px solid rgba(107, 184, 255, 0.22);
+      color: #d7ecff;
+    }
+    .list {
+      display: grid;
+      gap: 8px;
+    }
+    .item-btn {
+      text-align: left;
+      width: 100%;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 10px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .item-btn:hover, .item-btn.active {
+      border-color: #69baff;
+      background: rgba(70, 132, 204, 0.16);
+    }
+    .legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 999px;
+      vertical-align: middle;
+    }
+    .legend .exact::before { background: #57d7a4; }
+    .legend .create::before { background: #6cb8ff; }
+    .legend .approx::before { background: #f6c55b; }
+    .legend .low::before { background: #f59191; }
+    .field-checks {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      max-height: 220px;
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0d1526;
+    }
+    .field-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+    }
+    .field-check .meta {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .field-check .name {
+      font-size: 13px;
+      word-break: break-word;
+    }
+    .field-check .index {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .root-list {
+      max-height: 240px;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+    }
+    .search-results {
+      max-height: 240px;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .search-summary {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 10px;
+      border: 1px dashed rgba(255,255,255,0.12);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.02);
+    }
+    .footer {
+      padding: 12px 20px 16px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    @media (max-width: 1320px) {
+      .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .details {
+        top: 10px;
+        right: 10px;
+        bottom: 10px;
+        width: min(380px, calc(100vw - 20px));
+        max-width: calc(100% - 20px);
+        max-height: min(calc(100% - 20px), calc(100vh - 20px));
+      }
+      .details-open-btn { top: 10px; right: 10px; }
+    }
+    @media (max-width: 1024px) {
+      .toolbar { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .field-checks, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .sidebar { width: min(520px, calc(100vw - 16px)); }
+      .settings-open-btn { right: 12px; top: 10px; }
+      .details {
+        top: 8px;
+        right: 8px;
+        bottom: 8px;
+        width: min(360px, calc(100vw - 16px));
+        max-width: calc(100% - 16px);
+        max-height: min(calc(100% - 16px), calc(100vh - 16px));
+      }
+      .details-open-btn { top: 8px; right: 8px; }
+    }
+    @media (max-width: 720px) {
+      .details {
+        left: 8px;
+        right: 8px;
+        width: auto;
+        max-width: calc(100% - 16px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <button id="openSettingsBtn" class="secondary settings-open-btn" type="button" aria-controls="settingsSidebar" aria-expanded="true">設定</button>
+    <aside class="sidebar" id="settingsSidebar">
+      <div class="section">
+        <div class="section-title">
+          <div>
+            <h1>EDR Process Tree Viewer</h1>
+            <p class="small muted">ブラウザだけで動作するオフライン版。CSVはローカルでのみ処理され、サーバ送信しません。</p>
+          </div>
+          <button id="closeSettingsBtn" class="ghost" type="button" aria-controls="settingsSidebar" aria-expanded="true">畳む</button>
+        </div>
+        <div class="info-box">
+          数百MB級のCSVを想定し、<strong>チャンク読み込み + Web Worker</strong>で解析します。大きなファイルでは、まず代表的な列だけを表示項目として選ぶと扱いやすくなります。
+        </div>
+      </div>
+
+      <section class="section">
+        <div class="section-title"><h2>1. ファイルとプレビュー</h2></div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="fileInput">CSVファイル</label>
+            <input id="fileInput" type="file" accept=".csv,.txt,text/csv">
+          </div>
+          <div class="field">
+            <label for="encodingSelect">文字コード</label>
+            <select id="encodingSelect">
+              <option value="utf-8" selected>UTF-8</option>
+              <option value="shift-jis">Shift_JIS</option>
+              <option value="utf-16le">UTF-16LE</option>
+              <option value="iso-8859-1">ISO-8859-1</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="delimiterSelect">区切り文字</label>
+            <select id="delimiterSelect">
+              <option value="auto" selected>自動判定</option>
+              <option value=",">カンマ (,)</option>
+              <option value="\t">タブ (TAB)</option>
+              <option value=";">セミコロン (;)</option>
+              <option value="|">パイプ (|)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="previewRows">プレビュー行数</label>
+            <input id="previewRows" type="number" min="10" max="50" step="1" value="10">
+          </div>
+        </div>
+        <div class="inline" style="margin-top:10px;">
+          <label class="checkbox-row"><input id="hasHeader" type="checkbox" checked> ヘッダ行あり</label>
+          <button id="loadPreviewBtn" class="secondary">プレビュー読込</button>
+        </div>
+        <div id="fileMeta" class="chips" style="margin-top:10px;"></div>
+        <div id="previewMessage" class="status-text" style="margin-top:10px;">ファイルを選択してプレビューを読み込んでください。</div>
+        <div class="preview-wrap" style="margin-top:10px;">
+          <table class="preview" id="previewTable"></table>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title"><h2>2. フィールド指定</h2></div>
+        <div class="section-desc">3つのPID系列を指定します。<strong>ProcessID</strong> に値がある行はプロセス作成として扱い、親は <strong>InitiatingProcessID</strong> を使います。ProcessID が空の行は、子を <strong>InitiatingProcessID</strong>、親を <strong>InitiatingProcessParentID</strong> として扱います。開始時刻列があればそれを最優先し、なければ作成行、さらに無ければイベント時刻＋ログ順でPID再利用を近似解決します。</div>
+        <div class="grid-2">
+          <div class="field"><label for="processIdField">ProcessID列 *</label><select id="processIdField"></select></div>
+          <div class="field"><label for="initiatingProcessIdField">InitiatingProcessID列 *</label><select id="initiatingProcessIdField"></select></div>
+          <div class="field"><label for="initiatingProcessParentIdField">InitiatingProcessParentID列 *</label><select id="initiatingProcessParentIdField"></select></div>
+          <div class="field"><label for="eventTimeField">イベント時刻列</label><select id="eventTimeField"></select></div>
+          <div class="field"><label for="processStartField">プロセス開始時刻列</label><select id="processStartField"></select></div>
+          <div class="field"><label for="eventTypeField">イベント種別列</label><select id="eventTypeField"></select></div>
+          <div class="field"><label for="scopeField">ホスト / デバイス識別列</label><select id="scopeField"></select></div>
+        </div>
+        <div class="grid-2" style="margin-top:10px;">
+          <div class="field">
+            <label for="createValues">プロセス作成イベント値（任意・複数可）</label>
+            <textarea id="createValues" placeholder="例: process_create\nprocess start\n1"></textarea>
+          </div>
+          <div class="field">
+            <label for="endValues">プロセス終了イベント値（任意・複数可）</label>
+            <textarea id="endValues" placeholder="例: process_end\nterminate\n2"></textarea>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:10px;">
+          <div class="field">
+            <label for="orderSelect">ログ順</label>
+            <select id="orderSelect">
+              <option value="auto" selected>自動判定</option>
+              <option value="asc">古い順 → 新しい順</option>
+              <option value="desc">新しい順 → 古い順</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="maxNodesInput">描画時の最大ノード数</label>
+            <input id="maxNodesInput" type="number" min="100" max="20000" step="100" value="5000">
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title">
+          <h2>3. 表示項目</h2>
+          <div class="inline tight">
+            <button id="autoPickFieldsBtn" class="ghost">推奨選択</button>
+            <button id="clearFieldsBtn" class="ghost">クリア</button>
+          </div>
+        </div>
+        <div class="section-desc">ここで選んだ列をノード表示と詳細パネルに反映します。解析コストを抑えるため、必要な列だけを選ぶのがおすすめです。</div>
+        <div id="displayFields" class="field-checks"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-title"><h2>4. 解析</h2></div>
+        <div class="inline">
+          <button id="analyzeBtn">解析開始</button>
+          <button id="cancelBtn" class="secondary" disabled>停止</button>
+        </div>
+        <div class="status-bar">
+          <div class="progress-wrap"><div class="progress" id="progressBar"></div></div>
+          <div class="status-text" id="statusText">まだ解析していません。</div>
+        </div>
+        <div class="legend">
+          <span class="exact">開始時刻列で識別</span>
+          <span class="create">作成イベントで識別</span>
+          <span class="approx">イベント時刻 / ログ順で推定</span>
+          <span class="low">行順だけで推定</span>
+        </div>
+        <div id="warningsPane" class="list" style="margin-top:10px;"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-title"><h2>5. ルート選択 / 検索</h2></div>
+        <div class="field">
+          <label for="rootSelect">ルート候補</label>
+          <select id="rootSelect"><option value="__ALL__">全ルート（最大ノード数で制限）</option></select>
+        </div>
+        <div class="inline" style="margin-top:10px;">
+          <button id="renderBtn" class="secondary" disabled>表示</button>
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label for="searchInput">キーワード検索（1行またはカンマ区切りで複数指定）</label>
+          <textarea id="searchInput" placeholder="例:
+powershell.exe
+svchost
+Temp\a.txt"></textarea>
+        </div>
+        <div class="grid-2" style="margin-top:10px;">
+          <div class="field">
+            <label for="searchMode">キーワード結合</label>
+            <select id="searchMode">
+              <option value="or" selected>OR（いずれかに一致）</option>
+              <option value="and">AND（すべてに一致）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>検索表示</label>
+            <div class="inline">
+              <button id="searchBtn" class="secondary" disabled>関連ノード表示</button>
+              <button id="clearSearchBtn" class="ghost">検索解除</button>
+            </div>
+          </div>
+        </div>
+        <div class="root-list" id="rootList" style="margin-top:10px;"></div>
+        <div class="search-results" id="searchResults"></div>
+      </section>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <main class="content">
+      <div class="hero">
+        <h2>プロセスツリー</h2>
+        <p>ノードをクリックすると詳細を表示します。マウスホイールで拡大縮小、ドラッグで移動できます。親がログに無い場合は推定親を生成し、大きなツリーは最大ノード数で自動的に切り詰めます。右ペインはビューア上に固定表示され、内容が長い場合はペイン内をスクロールして確認できます。</p>
+      </div>
+
+      <section class="summary">
+        <div class="summary-grid">
+          <div class="metric"><div class="name">行数</div><div class="value" id="metricRows">-</div></div>
+          <div class="metric"><div class="name">プロセス実体数</div><div class="value" id="metricInstances">-</div></div>
+          <div class="metric"><div class="name">ルート数</div><div class="value" id="metricRoots">-</div></div>
+          <div class="metric"><div class="name">ログ順</div><div class="value" id="metricOrder">-</div></div>
+          <div class="metric"><div class="name">親未解決</div><div class="value" id="metricUnresolved">-</div></div>
+          <div class="metric"><div class="name">警告数</div><div class="value" id="metricWarnings">-</div></div>
+        </div>
+      </section>
+
+      <div class="toolbar">
+        <div class="field">
+          <label for="focusNodeInput">選択ノードID / PIDで中央寄せ</label>
+          <input id="focusNodeInput" type="text" placeholder="ノードID or PID">
+        </div>
+        <div class="field">
+          <label for="fontScaleInput">表示倍率（文字）</label>
+          <input id="fontScaleInput" type="range" min="0.8" max="1.4" step="0.05" value="1">
+        </div>
+        <div class="inline">
+          <button id="focusBtn" class="secondary">中央へ</button>
+          <button id="toggleDetailsBtn" class="secondary" type="button" aria-controls="detailPanel" aria-expanded="true">右ペインを畳む</button>
+        </div>
+        <div class="chips" id="viewerMeta"></div>
+      </div>
+
+      <div class="viewer-layout" id="viewerLayout">
+        <button id="openDetailsBtn" class="secondary details-open-btn" type="button" aria-controls="detailPanel" aria-expanded="true">右ペインを開く</button>
+        <section class="viewer" id="viewer">
+          <div class="viewer-controls">
+            <button id="zoomInBtn">＋</button>
+            <button id="zoomOutBtn">－</button>
+            <button id="fitBtn" class="secondary">全体表示</button>
+            <button id="resetViewBtn" class="secondary">リセット</button>
+          </div>
+          <div class="canvas-badge" id="canvasBadge">未表示</div>
+          <canvas id="treeCanvas"></canvas>
+        </section>
+        <aside class="details" id="detailPanel">
+          <div class="details-header">
+            <div>
+              <h3>ノード詳細</h3>
+              <p class="small muted">右ペイン全体は上部のボタンで畳めます。右ペインはツリー表示の上に重ねて表示し、画面サイズを超える内容だけ右ペイン内でスクロールして確認します。選択ノード概要には個別の畳むボタンはなく、下の各セクションだけ個別に畳めます。</p>
+            </div>
+          </div>
+          <div class="detail-card selected-node-card">
+            <h3>選択ノード概要</h3>
+            <div id="selectedNodeSummary" class="muted small">ノードを選択してください。</div>
+          </div>
+          <div class="detail-card" id="basicDetailCard">
+            <div class="detail-card-header">
+              <h3>基本情報</h3>
+              <button id="toggleBasicDetailBtn" class="ghost detail-toggle" type="button" aria-controls="basicDetailBody" aria-expanded="true">畳む</button>
+            </div>
+            <div class="detail-card-body" id="basicDetailBody">
+              <dl class="detail-grid" id="basicDetails"></dl>
+            </div>
+          </div>
+          <div class="detail-card" id="fieldDetailCard">
+            <div class="detail-card-header">
+              <h3>代表行の全項目</h3>
+              <button id="toggleFieldDetailBtn" class="ghost detail-toggle" type="button" aria-controls="fieldDetailBody" aria-expanded="true">畳む</button>
+            </div>
+            <div class="detail-card-body" id="fieldDetailBody">
+              <dl class="detail-grid" id="fieldDetails"></dl>
+            </div>
+          </div>
+          <div class="detail-card" id="analysisDetailCard">
+            <div class="detail-card-header">
+              <h3>解析メモ</h3>
+              <button id="toggleAnalysisDetailBtn" class="ghost detail-toggle" type="button" aria-controls="analysisDetailBody" aria-expanded="true">畳む</button>
+            </div>
+            <div class="detail-card-body" id="analysisDetailBody">
+              <div id="analysisNotes" class="muted small">開始時刻列・作成イベント・イベント時刻・行順のどれを使ってPID再利用を解決したかを表示します。</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="footer">このツールは完全オフラインで動作します。ファイル内容はブラウザ内メモリにのみ保持され、外部送信しません。右ペインはツリー表示の上に重ねて表示され、画面サイズを超える内容だけ右ペイン内でスクロールして確認できます。選択ノード概要に個別の畳むボタンはありません。下の各セクションだけ個別に畳めます。</div>
+    </main>
+  </div>
+
+  <script id="worker-template" type="text/plain">
+  const appState = {
+    instances: [],
+    instanceMapByStart: new Map(),
+    currentByPid: new Map(),
+    childrenMap: new Map(),
+    roots: [],
+    topRoots: [],
+    nodeById: new Map(),
+    config: null,
+    columns: [],
+    stats: null,
+    warnings: [],
+    labelFields: [],
+    resolvedOrder: 'asc',
+    totalRows: 0,
+    searchIndex: [],
+    inferredParentMap: new Map()
+  };
+
+  self.onmessage = async (event) => {
+    const { type } = event.data || {};
+    try {
+      if (type === 'analyze') {
+        await analyzeFile(event.data.file, event.data.config, event.data.columns);
+      } else if (type === 'render-subtree') {
+        const payload = buildSubtreePayload(event.data.rootId, event.data.maxNodes || 5000);
+        postMessage({ type: 'subtree', ...payload });
+      } else if (type === 'search-tree') {
+        const result = buildSearchTree(event.data.query || '', event.data.mode || 'or', event.data.limit || 50, event.data.maxNodes || 5000);
+        postMessage({ type: 'search-tree', ...result });
+      } else if (type === 'node-detail') {
+        const node = appState.nodeById.get(event.data.nodeId);
+        postMessage({ type: 'node-detail', node: node ? serializeNodeDetail(node) : null });
+      } else if (type === 'dispose') {
+        clearState();
+      }
+    } catch (error) {
+      postMessage({ type: 'error', message: String(error && error.stack || error) });
+    }
+  };
+
+  function clearState() {
+    appState.instances = [];
+    appState.instanceMapByStart = new Map();
+    appState.currentByPid = new Map();
+    appState.childrenMap = new Map();
+    appState.roots = [];
+    appState.topRoots = [];
+    appState.nodeById = new Map();
+    appState.config = null;
+    appState.columns = [];
+    appState.stats = null;
+    appState.warnings = [];
+    appState.labelFields = [];
+    appState.resolvedOrder = 'asc';
+    appState.totalRows = 0;
+    appState.searchIndex = [];
+    appState.inferredParentMap = new Map();
+  }
+
+  async function analyzeFile(file, config, columns) {
+    clearState();
+    appState.columns = columns || [];
+    appState.config = config;
+    appState.stats = {
+      rows: 0,
+      instances: 0,
+      roots: 0,
+      unresolvedParents: 0,
+      warnings: 0,
+      exact: 0,
+      create: 0,
+      approx: 0,
+      low: 0,
+      parseErrors: 0
+    };
+    appState.labelFields = (config.displayFields || []).map(Number);
+
+    let resolvedOrder = config.orderMode;
+    if (resolvedOrder === 'auto') {
+      resolvedOrder = detectLogOrder(file, config);
+    }
+    appState.resolvedOrder = resolvedOrder;
+    postMessage({ type: 'status', message: 'ログを解析しています…', phase: 'analyze', progress: 0.02, resolvedOrder });
+
+    const chunkSize = 1024 * 1024 * 2;
+    const reader = new FileReaderSync();
+    const parserState = createCsvParserState(config.delimiter);
+    let offset = 0;
+    let headerConsumed = false;
+    let rowNumber = 0;
+    let lastProgressAt = 0;
+
+    while (offset < file.size) {
+      const blob = file.slice(offset, offset + chunkSize);
+      const text = reader.readAsText(blob, config.encoding || 'utf-8');
+      parseCsvChunk(text, parserState, (row) => {
+        rowNumber += 1;
+        if (config.hasHeader && !headerConsumed) {
+          headerConsumed = true;
+          return;
+        }
+        processRow(row, rowNumber, resolvedOrder, config);
+      });
+      offset += chunkSize;
+      if (Date.now() - lastProgressAt > 150) {
+        lastProgressAt = Date.now();
+        postMessage({
+          type: 'status',
+          message: `解析中… ${Math.min(99, Math.round(offset / file.size * 100))}%`,
+          phase: 'analyze',
+          progress: Math.min(0.99, offset / file.size),
+          resolvedOrder
+        });
+      }
+    }
+
+    finalizeCsvParser(parserState, (row) => {
+      rowNumber += 1;
+      if (config.hasHeader && !headerConsumed) {
+        headerConsumed = true;
+        return;
+      }
+      processRow(row, rowNumber, resolvedOrder, config);
+    });
+
+    appState.totalRows = rowNumber;
+    appState.stats.rows = rowNumber - (config.hasHeader ? 1 : 0);
+
+    postMessage({ type: 'status', message: '親子関係を解決しています…', phase: 'link', progress: 0.995, resolvedOrder });
+    finalizeInstances(resolvedOrder);
+
+    appState.stats.exact = appState.instances.filter(node => node.confidence === 'exact').length;
+    appState.stats.create = appState.instances.filter(node => node.confidence === 'create').length;
+    appState.stats.approx = appState.instances.filter(node => node.confidence === 'approx').length;
+    appState.stats.low = appState.instances.filter(node => node.confidence === 'low').length;
+    appState.stats.instances = appState.instances.filter(node => !node.synthetic).length;
+    appState.stats.roots = appState.roots.length;
+    appState.stats.warnings = appState.warnings.length;
+
+    const rootsForUi = appState.topRoots.slice(0, 200).map(node => ({
+      id: node.id,
+      label: buildNodeTitle(node),
+      size: node.subtreeSize || 1,
+      confidence: confidenceLabel(node.confidence)
+    }));
+
+    postMessage({
+      type: 'complete',
+      summary: {
+        rows: appState.stats.rows,
+        instances: appState.stats.instances,
+        roots: appState.stats.roots,
+        unresolvedParents: appState.stats.unresolvedParents,
+        warnings: appState.stats.warnings,
+        exact: appState.stats.exact,
+        create: appState.stats.create,
+        approx: appState.stats.approx,
+        low: appState.stats.low,
+        resolvedOrder
+      },
+      warnings: appState.warnings,
+      roots: rootsForUi,
+      defaultRootId: appState.topRoots.length ? appState.topRoots[0].id : '__ALL__'
+    });
+  }
+
+  function detectLogOrder(file, config) {
+    if (config.eventTimeFieldIndex == null || config.eventTimeFieldIndex < 0) {
+      appState.warnings.push('イベント時刻列が未指定のため、ログ順の自動判定はできません。古い順として扱います。');
+      return 'asc';
+    }
+    const reader = new FileReaderSync();
+    const sampleSize = Math.min(file.size, 1024 * 1024);
+    const text = reader.readAsText(file.slice(0, sampleSize), config.encoding || 'utf-8');
+    const parserState = createCsvParserState(config.delimiter);
+    const timestamps = [];
+    let rowNumber = 0;
+    let headerConsumed = false;
+    parseCsvChunk(text, parserState, (row) => {
+      rowNumber += 1;
+      if (config.hasHeader && !headerConsumed) {
+        headerConsumed = true;
+        return;
+      }
+      const raw = safeGet(row, config.eventTimeFieldIndex);
+      const parsed = parseTimestamp(raw);
+      if (parsed != null) timestamps.push(parsed);
+    }, 120);
+    finalizeCsvParser(parserState, (row) => {
+      if (timestamps.length >= 120) return;
+      rowNumber += 1;
+      if (config.hasHeader && !headerConsumed) {
+        headerConsumed = true;
+        return;
+      }
+      const raw = safeGet(row, config.eventTimeFieldIndex);
+      const parsed = parseTimestamp(raw);
+      if (parsed != null) timestamps.push(parsed);
+    });
+
+    let ascVotes = 0;
+    let descVotes = 0;
+    for (let i = 1; i < timestamps.length; i += 1) {
+      if (timestamps[i] > timestamps[i - 1]) ascVotes += 1;
+      if (timestamps[i] < timestamps[i - 1]) descVotes += 1;
+    }
+    if (!ascVotes && !descVotes) {
+      appState.warnings.push('イベント時刻列からログ順を自動判定できませんでした。古い順として扱います。');
+      return 'asc';
+    }
+    return descVotes > ascVotes ? 'desc' : 'asc';
+  }
+
+  function processRow(row, rowNumber, orderMode, config) {
+    const processId = normalizePid(safeGet(row, config.processIdFieldIndex));
+    const initiatingProcessId = normalizePid(safeGet(row, config.initiatingProcessIdFieldIndex));
+    const initiatingProcessParentId = normalizePid(safeGet(row, config.initiatingProcessParentIdFieldIndex));
+    const pid = processId || initiatingProcessId;
+    if (!pid) return;
+
+    const ppid = processId ? initiatingProcessId : initiatingProcessParentId;
+    const scope = config.scopeFieldIndex != null && config.scopeFieldIndex >= 0 ? trimValue(safeGet(row, config.scopeFieldIndex)) : '';
+    const eventTimeRaw = config.eventTimeFieldIndex != null && config.eventTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.eventTimeFieldIndex)) : '';
+    const startTimeRaw = config.processStartFieldIndex != null && config.processStartFieldIndex >= 0 ? trimValue(safeGet(row, config.processStartFieldIndex)) : '';
+    const eventTypeRaw = config.eventTypeFieldIndex != null && config.eventTypeFieldIndex >= 0 ? trimValue(safeGet(row, config.eventTypeFieldIndex)) : '';
+
+    const eventTimeMs = parseTimestamp(eventTimeRaw);
+    const startTimeMs = parseTimestamp(startTimeRaw);
+    const hasImplicitCreate = !!processId;
+    const isCreate = hasImplicitCreate || matchesEventType(eventTypeRaw, config.createValues || []);
+    const isEnd = matchesEventType(eventTypeRaw, config.endValues || []);
+
+    const rowDisplay = collectDisplayValues(row, config.displayFields || []);
+    const pidKey = scope + '\u0001' + pid;
+
+    let node = null;
+
+    if (startTimeRaw) {
+      const startKey = scope + '\u0001' + pid + '\u0001' + startTimeRaw;
+      const currentNodeId = appState.currentByPid.get(pidKey);
+      const currentNode = currentNodeId ? appState.nodeById.get(currentNodeId) : null;
+      node = appState.instanceMapByStart.get(startKey) || null;
+      if (!node && currentNode && !currentNode.startTimeRaw) {
+        node = currentNode;
+      }
+      if (!node) {
+        node = createInstance(pid, ppid, scope, rowNumber, rowDisplay, row);
+      }
+      node.confidence = 'exact';
+      node.anchorKind = 'start_time';
+      node.anchorRow = node.anchorRow || rowNumber;
+      node.anchorTimeMs = startTimeMs;
+      node.anchorRaw = startTimeRaw;
+      node.startTimeMs = startTimeMs;
+      node.startTimeRaw = startTimeRaw;
+      node.ppid = ppid || node.ppid;
+      maybeSetRepresentative(node, rowNumber, rowDisplay, row, hasImplicitCreate ? 5 : 4, 'start_time', ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+      appState.instanceMapByStart.set(startKey, node);
+      appState.currentByPid.set(pidKey, node.id);
+    } else {
+      if (orderMode === 'asc') {
+        const currentId = appState.currentByPid.get(pidKey);
+        if (isCreate || !currentId) {
+          node = createInstance(pid, ppid, scope, rowNumber, rowDisplay, row);
+          node.confidence = isCreate ? 'create' : 'approx';
+          if (isCreate) {
+            node.anchorKind = 'create_event';
+            node.anchorRow = rowNumber;
+            node.anchorTimeMs = eventTimeMs;
+            node.anchorRaw = eventTimeRaw || '';
+            node.startTimeMs = eventTimeMs;
+            node.startTimeRaw = eventTimeRaw || '';
+            maybeSetRepresentative(node, rowNumber, rowDisplay, row, hasImplicitCreate ? 5 : 3, 'create_event', ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+          } else {
+            node.anchorKind = eventTimeMs != null ? 'event_time' : 'row_order';
+            node.anchorRow = rowNumber;
+            node.anchorTimeMs = eventTimeMs;
+            node.anchorRaw = eventTimeRaw || '';
+            maybeSetRepresentative(node, rowNumber, rowDisplay, row, eventTimeMs != null ? 2 : 1, node.anchorKind, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+          }
+          appState.currentByPid.set(pidKey, node.id);
+        } else {
+          node = appState.nodeById.get(currentId);
+        }
+      } else {
+        const currentId = appState.currentByPid.get(pidKey);
+        if (!currentId) {
+          node = createInstance(pid, ppid, scope, rowNumber, rowDisplay, row);
+          node.confidence = eventTimeMs != null ? 'approx' : 'low';
+          node.anchorKind = eventTimeMs != null ? 'event_time' : 'row_order';
+          node.anchorRow = rowNumber;
+          node.anchorTimeMs = eventTimeMs;
+          node.anchorRaw = eventTimeRaw || '';
+          maybeSetRepresentative(node, rowNumber, rowDisplay, row, eventTimeMs != null ? 2 : 1, node.anchorKind, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+          appState.currentByPid.set(pidKey, node.id);
+        } else {
+          node = appState.nodeById.get(currentId);
+        }
+      }
+    }
+
+    if (!node) {
+      node = createInstance(pid, ppid, scope, rowNumber, rowDisplay, row);
+      node.confidence = eventTimeMs != null ? 'approx' : 'low';
+      node.anchorKind = eventTimeMs != null ? 'event_time' : 'row_order';
+      node.anchorRow = rowNumber;
+      node.anchorTimeMs = eventTimeMs;
+      node.anchorRaw = eventTimeRaw || '';
+      maybeSetRepresentative(node, rowNumber, rowDisplay, row, eventTimeMs != null ? 2 : 1, node.anchorKind, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+      appState.currentByPid.set(pidKey, node.id);
+    }
+
+    attachRowToInstance(node, rowNumber, ppid, eventTimeRaw, eventTimeMs, eventTypeRaw, rowDisplay, row);
+
+    if (isCreate && !startTimeRaw) {
+      if (!node.startTimeRaw) {
+        node.startTimeRaw = eventTimeRaw || '';
+        node.startTimeMs = eventTimeMs;
+      }
+      node.anchorKind = 'create_event';
+      node.anchorRow = rowNumber;
+      node.anchorTimeMs = eventTimeMs;
+      node.anchorRaw = eventTimeRaw || '';
+      node.ppid = ppid || node.ppid;
+      node.confidence = 'create';
+      maybeSetRepresentative(node, rowNumber, rowDisplay, row, hasImplicitCreate ? 5 : 3, 'create_event', ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+      if (orderMode === 'desc' && !startTimeRaw) {
+        appState.currentByPid.delete(pidKey);
+      }
+    }
+
+    if (isEnd) {
+      node.endRow = rowNumber;
+      node.endTimeMs = eventTimeMs;
+      node.endTimeRaw = eventTimeRaw || '';
+      if (orderMode === 'asc' && !startTimeRaw) {
+        appState.currentByPid.delete(pidKey);
+      }
+    }
+  }
+
+  function createInstance(pid, ppid, scope, rowNumber, rowDisplay, row) {
+    const node = {
+      id: appState.instances.length + 1,
+      pid,
+      ppid: ppid || '',
+      scope: scope || '',
+      confidence: 'low',
+      anchorKind: 'row_order',
+      anchorRow: rowNumber,
+      anchorTimeMs: null,
+      anchorRaw: '',
+      startTimeMs: null,
+      startTimeRaw: '',
+      endTimeMs: null,
+      endTimeRaw: '',
+      endRow: null,
+      firstRow: rowNumber,
+      lastRow: rowNumber,
+      earliestTimeMs: null,
+      latestTimeMs: null,
+      earliestTimeRaw: '',
+      latestTimeRaw: '',
+      rowCount: 0,
+      representativePriority: 0,
+      representativeRow: rowNumber,
+      representativeValues: { ...rowDisplay },
+      representativeRowValues: captureRowValues(row),
+      representativeEventType: '',
+      representativeEventTimeRaw: '',
+      representativeEventTimeMs: null,
+      parentId: null,
+      children: [],
+      depth: 0,
+      subtreeSize: 1,
+      labelCache: '',
+      searchText: '',
+      searchTerms: new Set(),
+      unresolvedParent: false,
+      parentResolution: 'normal',
+      synthetic: false,
+      syntheticKind: '',
+      inferredContext: '',
+      inferredSlot: '',
+      inferredChildCount: 0,
+      logicalStart: 0,
+      logicalEnd: 0,
+      logicalAnchor: 0,
+      firstEventType: ''
+    };
+    appState.instances.push(node);
+    appState.nodeById.set(node.id, node);
+    return node;
+  }
+
+  function createInferredParentNode(child, slotKey, slotContext) {
+    const blankRow = new Array(appState.columns.length).fill('');
+    const node = createInstance(child.ppid || '?', '', child.scope || '', child.anchorRow || child.firstRow || 0, {}, blankRow);
+    node.synthetic = true;
+    node.syntheticKind = 'inferred_parent';
+    node.parentResolution = 'synthetic_missing';
+    node.confidence = 'inferred';
+    node.anchorKind = 'inferred_parent';
+    node.anchorRow = child.anchorRow || child.firstRow || 0;
+    node.anchorTimeMs = child.anchorTimeMs != null ? child.anchorTimeMs - 1 : null;
+    node.anchorRaw = child.anchorRaw || child.startTimeRaw || child.earliestTimeRaw || '';
+    node.startTimeMs = node.anchorTimeMs;
+    node.startTimeRaw = node.anchorRaw;
+    node.earliestTimeMs = node.anchorTimeMs;
+    node.latestTimeMs = node.anchorTimeMs;
+    node.earliestTimeRaw = node.anchorRaw;
+    node.latestTimeRaw = node.anchorRaw;
+    node.rowCount = 0;
+    node.representativePriority = 10;
+    node.representativeRow = child.representativeRow || child.anchorRow || child.firstRow || 0;
+    node.representativeValues = {};
+    node.representativeRowValues = blankRow;
+    node.representativeEventType = '[inferred-parent]';
+    node.representativeEventTimeRaw = child.representativeEventTimeRaw || child.anchorRaw || '';
+    node.representativeEventTimeMs = child.representativeEventTimeMs != null ? child.representativeEventTimeMs : child.anchorTimeMs;
+    node.logicalStart = (child.logicalAnchor || child.logicalStart || 0) - 0.1;
+    node.logicalEnd = node.logicalStart;
+    node.logicalAnchor = node.logicalStart;
+    node.inferredContext = slotContext || '';
+    node.inferredSlot = String(slotKey || '0');
+    node.inferredChildCount = 0;
+    if (!node.searchTerms) node.searchTerms = new Set();
+    node.searchTerms.add('推定親');
+    node.searchTerms.add('missing parent');
+    node.searchTerms.add(String(node.pid || '').toLowerCase());
+    if (node.scope) node.searchTerms.add(String(node.scope).toLowerCase());
+    return node;
+  }
+
+  function compareNodeAnchorToChild(node, child) {
+    if (node.anchorTimeMs != null && child.anchorTimeMs != null) {
+      if (node.anchorTimeMs !== child.anchorTimeMs) return node.anchorTimeMs - child.anchorTimeMs;
+    } else if (node.anchorTimeMs != null && child.anchorTimeMs == null) {
+      return 1;
+    } else if (node.anchorTimeMs == null && child.anchorTimeMs != null) {
+      return -1;
+    }
+    if (node.logicalAnchor !== child.logicalAnchor) return node.logicalAnchor - child.logicalAnchor;
+    return node.id - child.id;
+  }
+
+  function getInferredParentSlot(child, candidates) {
+    if (!candidates || !candidates.length) return { slot: 0, context: 'no_observed_parent' };
+    let slot = 0;
+    while (slot < candidates.length && compareNodeAnchorToChild(candidates[slot], child) < 0) slot += 1;
+    let context = 'between_observed_parent_generations';
+    if (slot === 0) context = 'before_first_observed_parent';
+    else if (slot >= candidates.length) context = 'after_last_observed_parent';
+    return { slot, context };
+  }
+
+  function getOrCreateInferredParent(child, candidates) {
+    const slotInfo = getInferredParentSlot(child, candidates);
+    const key = (child.scope || '') + '' + (child.ppid || '?') + '' + slotInfo.slot;
+    let node = appState.inferredParentMap.get(key) || null;
+    if (!node) {
+      node = createInferredParentNode(child, slotInfo.slot, slotInfo.context);
+      appState.inferredParentMap.set(key, node);
+    }
+    return node;
+  }
+
+  function attachRowToInstance(node, rowNumber, ppid, eventTimeRaw, eventTimeMs, eventTypeRaw, rowDisplay, row) {
+    node.rowCount += 1;
+    node.firstRow = Math.min(node.firstRow, rowNumber);
+    node.lastRow = Math.max(node.lastRow, rowNumber);
+    if (ppid && !node.ppid) node.ppid = ppid;
+    if (eventTypeRaw && !node.firstEventType) node.firstEventType = eventTypeRaw;
+    appendSearchValues(node, row, node.pid, ppid, node.scope, eventTypeRaw);
+
+    if (eventTimeMs != null) {
+      if (node.earliestTimeMs == null || eventTimeMs < node.earliestTimeMs) {
+        node.earliestTimeMs = eventTimeMs;
+        node.earliestTimeRaw = eventTimeRaw || '';
+      }
+      if (node.latestTimeMs == null || eventTimeMs > node.latestTimeMs) {
+        node.latestTimeMs = eventTimeMs;
+        node.latestTimeRaw = eventTimeRaw || '';
+      }
+      if ((node.anchorTimeMs == null || node.anchorKind === 'event_time') && node.representativePriority < 2) {
+        maybeSetRepresentative(node, rowNumber, rowDisplay, row, 2, 'event_time', ppid, node.scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+      }
+    } else if (node.representativePriority < 1) {
+      maybeSetRepresentative(node, rowNumber, rowDisplay, row, 1, 'row_order', ppid, node.scope, eventTimeRaw, eventTimeMs, eventTypeRaw);
+    }
+  }
+
+  function maybeSetRepresentative(node, rowNumber, rowDisplay, row, priority, reason, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw) {
+    if (priority > node.representativePriority || (priority === node.representativePriority && rowNumber < node.representativeRow)) {
+      node.representativePriority = priority;
+      node.representativeRow = rowNumber;
+      node.representativeValues = { ...rowDisplay };
+      node.representativeRowValues = captureRowValues(row);
+      node.representativeEventType = eventTypeRaw || '';
+      node.representativeEventTimeRaw = eventTimeRaw || '';
+      node.representativeEventTimeMs = eventTimeMs;
+      if (ppid) node.ppid = ppid;
+      if (scope) node.scope = scope;
+      if (reason && !node.anchorKind) node.anchorKind = reason;
+    }
+  }
+
+  function finalizeInstances(orderMode) {
+    const rowToLogical = (row) => orderMode === 'asc' ? row : (appState.totalRows - row + 1);
+
+    const pidGroups = new Map();
+    const realNodes = appState.instances.slice();
+    appState.inferredParentMap = new Map();
+
+    for (const node of realNodes) {
+      node.children = [];
+      node.parentId = null;
+      node.unresolvedParent = false;
+      node.logicalStart = rowToLogical(node.anchorRow || node.firstRow);
+      node.logicalEnd = rowToLogical(node.endRow || node.lastRow);
+      const logicalFirst = rowToLogical(node.firstRow);
+      const logicalLast = rowToLogical(node.lastRow);
+      if (logicalFirst < node.logicalStart) node.logicalStart = logicalFirst;
+      if (logicalLast < node.logicalStart) node.logicalStart = logicalLast;
+      if (logicalFirst > node.logicalEnd) node.logicalEnd = logicalFirst;
+      if (logicalLast > node.logicalEnd) node.logicalEnd = logicalLast;
+      node.logicalAnchor = rowToLogical(node.anchorRow || node.firstRow);
+
+      const groupKey = (node.scope || '') + '' + node.pid;
+      if (!pidGroups.has(groupKey)) pidGroups.set(groupKey, []);
+      pidGroups.get(groupKey).push(node);
+    }
+
+    for (const list of pidGroups.values()) {
+      list.sort((a, b) => compareNodesByAnchor(a, b));
+      for (let i = 0; i < list.length; i += 1) {
+        const current = list[i];
+        const next = list[i + 1] || null;
+        current.nextReuseLogicalAnchor = next ? next.logicalAnchor : null;
+        current.nextReuseAnchorTimeMs = next ? next.anchorTimeMs : null;
+      }
+    }
+
+    for (const node of realNodes) {
+      const parentPid = node.ppid;
+      if (!parentPid) {
+        appState.stats.unresolvedParents += 1;
+        node.unresolvedParent = true;
+        continue;
+      }
+      const candidates = pidGroups.get((node.scope || '') + '' + parentPid) || [];
+      const parent = findBestParent(node, candidates);
+      if (parent) {
+        node.parentId = parent.id;
+        parent.children.push(node.id);
+      } else {
+        node.unresolvedParent = true;
+        appState.stats.unresolvedParents += 1;
+        const inferredParent = getOrCreateInferredParent(node, candidates);
+        if (inferredParent) {
+          node.parentId = inferredParent.id;
+          inferredParent.children.push(node.id);
+          inferredParent.inferredChildCount = (inferredParent.inferredChildCount || 0) + 1;
+        }
+      }
+    }
+
+    appState.roots = [];
+    for (const node of appState.instances) {
+      if (!node.parentId) appState.roots.push(node);
+    }
+
+    for (const root of appState.roots) {
+      computeSubtreeSize(root.id);
+    }
+    appState.topRoots = [...appState.roots].sort((a, b) => (b.subtreeSize || 1) - (a.subtreeSize || 1));
+    buildSearchIndex();
+  }
+
+  function computeSubtreeSize(rootId) {
+    const stack = [{ id: rootId, visited: false, depth: 0 }];
+    while (stack.length) {
+      const current = stack.pop();
+      const node = appState.nodeById.get(current.id);
+      if (!node) continue;
+      if (!current.visited) {
+        node.depth = current.depth;
+        stack.push({ id: current.id, visited: true, depth: current.depth });
+        const children = node.children || [];
+        for (let i = children.length - 1; i >= 0; i -= 1) {
+          stack.push({ id: children[i], visited: false, depth: current.depth + 1 });
+        }
+      } else {
+        let sum = 1;
+        for (const childId of node.children || []) {
+          const child = appState.nodeById.get(childId);
+          if (child) sum += child.subtreeSize || 1;
+        }
+        node.subtreeSize = sum;
+      }
+    }
+  }
+
+  function findBestParent(child, candidates) {
+    let best = null;
+    for (const candidate of candidates) {
+      if (!candidate || candidate.id === child.id) continue;
+      if (!isCandidateBeforeChild(candidate, child)) continue;
+      if (!isChildWithinParentLifetime(candidate, child)) continue;
+      if (!best || compareNodesByAnchor(candidate, best) > 0) {
+        best = candidate;
+      }
+    }
+    return best;
+  }
+
+  function isCandidateBeforeChild(parent, child) {
+    const childHasTime = child.anchorTimeMs != null;
+    const parentHasTime = parent.anchorTimeMs != null;
+    if (childHasTime && parentHasTime) {
+      if (parent.anchorTimeMs < child.anchorTimeMs) return true;
+      if (parent.anchorTimeMs > child.anchorTimeMs) return false;
+      return parent.id < child.id;
+    }
+    if (parent.logicalAnchor < child.logicalAnchor) return true;
+    if (parent.logicalAnchor > child.logicalAnchor) return false;
+    return parent.id < child.id;
+  }
+
+  function isChildWithinParentLifetime(parent, child) {
+    const childHasTime = child.anchorTimeMs != null;
+    const parentHasEnd = parent.endTimeMs != null;
+    if (childHasTime && parentHasEnd) {
+      return child.anchorTimeMs <= parent.endTimeMs;
+    }
+    if (childHasTime && parent.nextReuseAnchorTimeMs != null) {
+      return child.anchorTimeMs < parent.nextReuseAnchorTimeMs;
+    }
+    if (parent.nextReuseLogicalAnchor != null) {
+      return child.logicalAnchor < parent.nextReuseLogicalAnchor;
+    }
+    return true;
+  }
+
+  function compareNodesByAnchor(a, b) {
+    if (a.anchorTimeMs != null && b.anchorTimeMs != null) {
+      if (a.anchorTimeMs !== b.anchorTimeMs) return a.anchorTimeMs - b.anchorTimeMs;
+    } else if (a.anchorTimeMs != null && b.anchorTimeMs == null) {
+      return 1;
+    } else if (a.anchorTimeMs == null && b.anchorTimeMs != null) {
+      return -1;
+    }
+    if (a.logicalAnchor !== b.logicalAnchor) return a.logicalAnchor - b.logicalAnchor;
+    return a.id - b.id;
+  }
+
+  function buildSearchIndex() {
+    appState.searchIndex = appState.instances.map(node => {
+      const title = buildNodeTitle(node);
+      const allText = Array.from(node.searchTerms || []).join(' ');
+      node.labelCache = title;
+      node.searchText = [title, allText, node.pid, node.ppid, node.scope].join(' ').toLowerCase();
+      node.searchTerms = null;
+      return {
+        id: node.id,
+        text: node.searchText,
+        label: title,
+        size: node.subtreeSize || 1
+      };
+    });
+  }
+
+  function parseSearchTerms(query) {
+    const parts = String(query || '').replace(/\r/g, '\n').split(/\n|,/);
+    const seen = new Set();
+    const terms = [];
+    for (const part of parts) {
+      const normalized = trimValue(part).toLowerCase();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      terms.push(normalized);
+    }
+    return terms;
+  }
+
+  function scoreSearchItem(item, terms) {
+
+
+    let score = 0;
+    for (const term of terms) {
+      const pos = item.text.indexOf(term);
+      if (pos === 0) score += 200;
+      else if (pos > 0) score += Math.max(20, 120 - pos);
+    }
+    score += Math.min(5000, item.size || 1);
+    return score;
+  }
+
+  function findSearchMatches(terms, mode) {
+    const matches = [];
+    if (!terms.length) return matches;
+    for (const item of appState.searchIndex) {
+      const ok = mode === 'and'
+        ? terms.every(term => item.text.includes(term))
+        : terms.some(term => item.text.includes(term));
+      if (!ok) continue;
+      matches.push({ ...item, score: scoreSearchItem(item, terms) });
+    }
+    matches.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.size - a.size;
+    });
+    return matches;
+  }
+
+  function buildRelatedNodeSet(matchedIds) {
+    const allowed = new Set();
+    const matchedSet = matchedIds instanceof Set ? matchedIds : new Set(matchedIds || []);
+
+    for (const id of matchedSet) {
+      let current = appState.nodeById.get(id);
+      while (current) {
+        if (allowed.has(current.id)) break;
+        allowed.add(current.id);
+        current = current.parentId ? appState.nodeById.get(current.parentId) : null;
+      }
+    }
+
+    const queue = [...matchedSet];
+    const seen = new Set(queue);
+    while (queue.length) {
+      const id = queue.shift();
+      const node = appState.nodeById.get(id);
+      if (!node) continue;
+      allowed.add(id);
+      for (const childId of node.children || []) {
+        if (seen.has(childId)) continue;
+        seen.add(childId);
+        allowed.add(childId);
+        queue.push(childId);
+      }
+    }
+    return allowed;
+  }
+
+  function buildSearchTree(query, mode, limit, maxNodes) {
+    const terms = parseSearchTerms(query);
+    if (!terms.length) {
+      return {
+        terms: [],
+        mode,
+        matchCount: 0,
+        results: [],
+        rootId: '__SEARCH__',
+        nodes: [],
+        truncated: false,
+        omittedByLimitCount: 0,
+        filtered: true
+      };
+    }
+
+    const matches = findSearchMatches(terms, mode);
+    const matchedIds = new Set(matches.map(item => item.id));
+    const allowedSet = buildRelatedNodeSet(matchedIds);
+    const roots = [];
+    for (const id of allowedSet) {
+      const node = appState.nodeById.get(id);
+      if (!node) continue;
+      if (!node.parentId || !allowedSet.has(node.parentId)) {
+        roots.push(node);
+      }
+    }
+    roots.sort((a, b) => (b.subtreeSize || 1) - (a.subtreeSize || 1));
+
+    const payload = buildTreePayload({
+      rootId: '__SEARCH__',
+      roots,
+      maxNodes,
+      allowedSet,
+      matchedIds,
+      filtered: true,
+      candidateCount: allowedSet.size
+    });
+
+    return {
+      ...payload,
+      terms,
+      mode,
+      matchCount: matches.length,
+      results: matches.slice(0, limit).map(item => ({ id: item.id, label: item.label, size: item.size, score: item.score }))
+    };
+  }
+
+  function buildSubtreePayload(rootId, maxNodes) {
+    let roots = [];
+    let candidateCount = 0;
+
+    if (rootId === '__ALL__') {
+      roots = appState.topRoots.slice();
+      candidateCount = appState.instances.length;
+    } else {
+      const rootNode = appState.nodeById.get(Number(rootId));
+      if (rootNode) {
+        roots = [rootNode];
+        candidateCount = rootNode.subtreeSize || 1;
+      }
+    }
+
+    return buildTreePayload({
+      rootId,
+      roots,
+      maxNodes,
+      allowedSet: null,
+      matchedIds: null,
+      filtered: false,
+      candidateCount
+    });
+  }
+
+  function buildTreePayload({ rootId, roots, maxNodes, allowedSet, matchedIds, filtered, candidateCount }) {
+    const nodes = [];
+    const queue = [];
+    const seen = new Set();
+
+    for (const node of roots || []) {
+      if (!node || seen.has(node.id)) continue;
+      seen.add(node.id);
+      queue.push({ id: node.id, parentId: null });
+    }
+
+    while (queue.length && nodes.length < maxNodes) {
+      const current = queue.shift();
+      const node = appState.nodeById.get(current.id);
+      if (!node) continue;
+      nodes.push(serializeNodeForRender(node, current.parentId, { isMatched: matchedIds ? matchedIds.has(node.id) : false }));
+      const childIds = (node.children || []).filter(childId => !allowedSet || allowedSet.has(childId));
+      for (const childId of childIds) {
+        if (seen.has(childId)) continue;
+        if (nodes.length + queue.length >= maxNodes) break;
+        seen.add(childId);
+        queue.push({ id: childId, parentId: node.id });
+      }
+    }
+
+    const renderedIds = new Set(nodes.map(node => node.id));
+    const allowedSubtreeMemo = new Map();
+    const renderedSubtreeMemo = new Map();
+
+    function countAllowedSubtree(nodeId) {
+      if (allowedSubtreeMemo.has(nodeId)) return allowedSubtreeMemo.get(nodeId);
+      if (allowedSet && !allowedSet.has(nodeId)) {
+        allowedSubtreeMemo.set(nodeId, 0);
+        return 0;
+      }
+      const node = appState.nodeById.get(nodeId);
+      if (!node) {
+        allowedSubtreeMemo.set(nodeId, 0);
+        return 0;
+      }
+      let count = 1;
+      for (const childId of node.children || []) {
+        count += countAllowedSubtree(childId);
+      }
+      allowedSubtreeMemo.set(nodeId, count);
+      return count;
+    }
+
+    function countRenderedSubtree(nodeId) {
+      if (renderedSubtreeMemo.has(nodeId)) return renderedSubtreeMemo.get(nodeId);
+      if (!renderedIds.has(nodeId)) {
+        renderedSubtreeMemo.set(nodeId, 0);
+        return 0;
+      }
+      const node = appState.nodeById.get(nodeId);
+      if (!node) {
+        renderedSubtreeMemo.set(nodeId, 0);
+        return 0;
+      }
+      let count = 1;
+      for (const childId of node.children || []) {
+        if (!renderedIds.has(childId)) continue;
+        count += countRenderedSubtree(childId);
+      }
+      renderedSubtreeMemo.set(nodeId, count);
+      return count;
+    }
+
+    let hasLimitTruncation = false;
+    const hiddenByLimitTotal = Math.max(0, (candidateCount || 0) - renderedIds.size);
+    for (const rendered of nodes) {
+      const original = appState.nodeById.get(rendered.id);
+      const totalChildren = (original && original.children ? original.children.length : 0);
+      const allowedChildren = original && original.children
+        ? original.children.filter(childId => !allowedSet || allowedSet.has(childId))
+        : [];
+      const renderedChildren = allowedChildren.filter(childId => renderedIds.has(childId));
+      rendered.totalChildren = totalChildren;
+      rendered.renderedChildren = renderedChildren.length;
+      rendered.hiddenChildrenByFilter = Math.max(0, totalChildren - allowedChildren.length);
+      rendered.hiddenChildrenByLimit = Math.max(0, allowedChildren.length - renderedChildren.length);
+      rendered.allowedSubtreeSize = countAllowedSubtree(rendered.id);
+      rendered.renderedSubtreeSize = countRenderedSubtree(rendered.id);
+      rendered.hiddenDescendantsByLimit = Math.max(0, rendered.allowedSubtreeSize - rendered.renderedSubtreeSize);
+      rendered.hiddenDescendantsByFilter = Math.max(0, Math.max(0, (original && original.subtreeSize ? original.subtreeSize : 1) - rendered.allowedSubtreeSize));
+      if (rendered.hiddenDescendantsByLimit > 0) hasLimitTruncation = true;
+    }
+
+    return {
+      rootId,
+      nodes,
+      truncated: hasLimitTruncation || queue.length > 0 || hiddenByLimitTotal > 0,
+      omittedByLimitCount: hiddenByLimitTotal,
+      filtered: !!filtered
+    };
+  }
+
+  function serializeNodeForRender(node, parentId, renderMeta) {
+    const labels = [];
+    if (node.synthetic && node.syntheticKind === 'inferred_parent') {
+      labels.push(`推定親 PID ${node.pid}${node.scope ? ` @ ${shorten(node.scope, 18)}` : ''}`);
+      if (node.inferredContext === 'before_first_observed_parent' || node.inferredContext === 'no_observed_parent') {
+        labels.push('ログ取得開始前から存在の可能性');
+      } else if (node.inferredContext === 'after_last_observed_parent') {
+        labels.push('後続ログに親実体なし');
+      } else {
+        labels.push('親実体はログ内で未観測');
+      }
+      labels.push(`推定子 ${node.inferredChildCount || (node.children || []).length}`);
+    } else {
+      labels.push(`PID ${node.pid}${node.scope ? ` @ ${shorten(node.scope, 18)}` : ''}`);
+      for (const fieldIndex of appState.labelFields) {
+        const rawLabel = appState.columns[fieldIndex] || `column_${fieldIndex + 1}`;
+        const value = node.representativeValues[fieldIndex] || '';
+        if (value) labels.push(`${rawLabel}: ${shorten(value, 48)}`);
+        if (labels.length >= 4) break;
+      }
+      if (labels.length === 1 && node.ppid) labels.push(`PPID: ${node.ppid}`);
+    }
+    return {
+      id: node.id,
+      parentId: parentId || null,
+      pid: node.pid,
+      ppid: node.ppid,
+      scope: node.scope,
+      confidence: node.confidence,
+      synthetic: !!node.synthetic,
+      syntheticKind: node.syntheticKind || '',
+      inferredContext: node.inferredContext || '',
+      subtreeSize: node.subtreeSize || 1,
+      rowCount: node.rowCount,
+      anchorKind: node.anchorKind,
+      anchorRaw: node.anchorRaw,
+      anchorTimeMs: node.anchorTimeMs,
+      labels,
+      unresolvedParent: node.unresolvedParent,
+      isMatched: !!(renderMeta && renderMeta.isMatched),
+      totalChildren: 0,
+      renderedChildren: 0,
+      hiddenChildrenByFilter: 0,
+      hiddenChildrenByLimit: 0,
+      allowedSubtreeSize: 1,
+      renderedSubtreeSize: 1,
+      hiddenDescendantsByFilter: 0,
+      hiddenDescendantsByLimit: 0
+    };
+  }
+
+  function serializeNodeDetail(node) {
+    return {
+      id: node.id,
+      pid: node.pid,
+      ppid: node.ppid,
+      scope: node.scope,
+      confidence: node.confidence,
+      confidenceLabel: confidenceLabel(node.confidence),
+      synthetic: !!node.synthetic,
+      syntheticKind: node.syntheticKind || '',
+      inferredContext: node.inferredContext || '',
+      inferredChildCount: node.inferredChildCount || 0,
+      anchorKind: node.anchorKind,
+      anchorLabel: anchorLabel(node),
+      rowCount: node.rowCount,
+      subtreeSize: node.subtreeSize || 1,
+      parentId: node.parentId,
+      startTimeRaw: node.startTimeRaw,
+      endTimeRaw: node.endTimeRaw,
+      earliestTimeRaw: node.earliestTimeRaw,
+      latestTimeRaw: node.latestTimeRaw,
+      representativeEventType: node.representativeEventType,
+      representativeEventTimeRaw: node.representativeEventTimeRaw,
+      representativeRow: node.representativeRow,
+      unresolvedParent: node.unresolvedParent,
+      allFields: appState.columns.map((name, index) => ({
+        name: name || `column_${index + 1}`,
+        value: (node.representativeRowValues || [])[index] || '',
+        index
+      }))
+    };
+  }
+
+  function anchorLabel(node) {
+    switch (node.anchorKind) {
+      case 'start_time':
+        return node.startTimeRaw || node.anchorRaw || '開始時刻列';
+      case 'create_event':
+        return node.startTimeRaw || node.anchorRaw || '作成イベント';
+      case 'event_time':
+        return node.anchorRaw || node.earliestTimeRaw || 'イベント時刻';
+      case 'inferred_parent':
+        return '親実体がログに無いため推定親を生成';
+      case 'row_order':
+      default:
+        return `行順ベース (row ${node.anchorRow})`;
+    }
+  }
+
+  function confidenceLabel(value) {
+    if (value === 'inferred') return '推定親';
+    if (value === 'exact') return '開始時刻列';
+    if (value === 'create') return '作成イベント';
+    if (value === 'approx') return 'イベント時刻 / ログ順';
+    return '行順のみ';
+  }
+
+  function parentResolutionLabel(value) {
+    if (value === 'normal') return '通常解決';
+    if (value === 'synthetic_missing') return '推定親ノード';
+    if (value === 'missing_ppid') return 'PPID未取得';
+    return '不明';
+  }
+
+  function buildNodeTitle(node) {
+    if (node.synthetic && node.syntheticKind === 'inferred_parent') {
+      const parts = [`#${node.id}`, `推定親 PID ${node.pid}`];
+      if (node.scope) parts.push(`@ ${shorten(node.scope, 20)}`);
+      parts.push('[推定親]');
+      return parts.join(' / ');
+    }
+    const parts = [`#${node.id}`, `PID ${node.pid}`];
+    if (node.scope) parts.push(`@ ${shorten(node.scope, 20)}`);
+    for (const fieldIndex of appState.labelFields) {
+      const value = node.representativeValues[fieldIndex] || '';
+      if (value) {
+        parts.push(shorten(value, 28));
+        break;
+      }
+    }
+    parts.push(`[${confidenceLabel(node.confidence)}]`);
+    return parts.join(' / ');
+  }
+
+  function collectDisplayValues(row, fieldIndices) {
+    const result = {};
+    for (const idx of fieldIndices || []) {
+      result[idx] = trimValue(safeGet(row, idx));
+    }
+    return result;
+  }
+
+  function captureRowValues(row) {
+    const values = new Array(appState.columns.length);
+    for (let i = 0; i < appState.columns.length; i += 1) {
+      values[i] = trimValue(safeGet(row, i));
+    }
+    return values;
+  }
+
+  function appendSearchValues(node, row, pid, ppid, scope, eventTypeRaw) {
+    if (!node.searchTerms) node.searchTerms = new Set();
+    if (pid) node.searchTerms.add(String(pid).toLowerCase());
+    if (ppid) node.searchTerms.add(String(ppid).toLowerCase());
+    if (scope) node.searchTerms.add(String(scope).toLowerCase());
+    if (eventTypeRaw) node.searchTerms.add(String(eventTypeRaw).toLowerCase());
+    for (let i = 0; i < row.length; i += 1) {
+      const value = trimValue(row[i]).toLowerCase();
+      if (!value) continue;
+      node.searchTerms.add(value);
+    }
+  }
+
+  function matchesEventType(rawValue, tokens) {
+    const value = trimValue(rawValue).toLowerCase();
+    if (!value || !tokens || !tokens.length) return false;
+    return tokens.some(token => token && value.includes(token));
+  }
+
+  function parseTimestamp(value) {
+    const raw = trimValue(value);
+    if (!raw) return null;
+    if (/^\d+$/.test(raw)) {
+      const n = Number(raw);
+      if (raw.length === 10) return n * 1000;
+      if (raw.length === 13) return n;
+      if (raw.length === 16) return Math.floor(n / 1000);
+      if (raw.length === 19) return Math.floor(n / 1000000);
+      if (n > 1000000000000) return n;
+    }
+    const normalized = raw.replace(/\//g, '-').replace(' ', 'T');
+    const parsed = Date.parse(normalized);
+    if (!Number.isNaN(parsed)) return parsed;
+    const parsedRaw = Date.parse(raw);
+    return Number.isNaN(parsedRaw) ? null : parsedRaw;
+  }
+
+  function normalizePid(value) {
+    const raw = trimValue(value);
+    if (!raw) return '';
+    const normalized = raw.replace(/^0+([0-9]+)$/u, '$1');
+    return normalized || '0';
+  }
+
+  function shorten(text, maxLen) {
+    const value = String(text || '');
+    if (value.length <= maxLen) return value;
+    return value.slice(0, Math.max(0, maxLen - 1)) + '…';
+  }
+
+  function trimValue(value) {
+    if (value == null) return '';
+    return String(value).trim();
+  }
+
+  function safeGet(row, index) {
+    if (!row || index == null || index < 0 || index >= row.length) return '';
+    return row[index] || '';
+  }
+
+  function createCsvParserState(delimiter) {
+    return {
+      delimiter,
+      inQuotes: false,
+      field: '',
+      row: []
+    };
+  }
+
+  function parseCsvChunk(text, state, onRow, maxRows) {
+    let rowsEmitted = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (state.inQuotes) {
+        if (ch === '"') {
+          const next = text[i + 1];
+          if (next === '"') {
+            state.field += '"';
+            i += 1;
+          } else {
+            state.inQuotes = false;
+          }
+        } else {
+          state.field += ch;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        state.inQuotes = true;
+      } else if (ch === state.delimiter) {
+        state.row.push(state.field);
+        state.field = '';
+      } else if (ch === '\n') {
+        state.row.push(state.field);
+        state.field = '';
+        onRow(state.row);
+        rowsEmitted += 1;
+        state.row = [];
+        if (maxRows && rowsEmitted >= maxRows) {
+          const remainder = text.slice(i + 1);
+          if (remainder) {
+            state.field += remainder;
+          }
+          return;
+        }
+      } else if (ch === '\r') {
+        const next = text[i + 1];
+        if (next === '\n') continue;
+        state.row.push(state.field);
+        state.field = '';
+        onRow(state.row);
+        rowsEmitted += 1;
+        state.row = [];
+      } else {
+        state.field += ch;
+      }
+    }
+  }
+
+  function finalizeCsvParser(state, onRow) {
+    if (state.inQuotes) {
+      state.field += '\n';
+      return;
+    }
+    if (state.field.length || state.row.length) {
+      state.row.push(state.field);
+      onRow(state.row);
+      state.field = '';
+      state.row = [];
+    }
+  }
+  </script>
+
+  <script>
+    (() => {
+      const state = {
+        file: null,
+        columns: [],
+        previewRows: [],
+        previewDelimiter: ',',
+        worker: null,
+        summary: null,
+        currentTree: null,
+        selectedNodeId: null,
+        selectedNodeDetail: null,
+        transform: { x: 40, y: 40, scale: 1 },
+        worldRects: [],
+        dragging: false,
+        lastPointer: null,
+        textScale: 1,
+        currentRootId: '__ALL__',
+        pendingSubtreeRoot: '__ALL__',
+        settingsOpen: true,
+        detailsOpen: true,
+        detailSections: {
+          basic: true,
+          fields: true,
+          analysis: true
+        },
+        maxNodesRerenderTimer: null
+      };
+
+      const els = {
+        openSettingsBtn: document.getElementById('openSettingsBtn'),
+        closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+        openDetailsBtn: document.getElementById('openDetailsBtn'),
+        toggleDetailsBtn: document.getElementById('toggleDetailsBtn'),
+        settingsSidebar: document.getElementById('settingsSidebar'),
+        sidebarBackdrop: document.getElementById('sidebarBackdrop'),
+        detailPanel: document.getElementById('detailPanel'),
+        viewerLayout: document.getElementById('viewerLayout'),
+        fileInput: document.getElementById('fileInput'),
+        encodingSelect: document.getElementById('encodingSelect'),
+        delimiterSelect: document.getElementById('delimiterSelect'),
+        previewRows: document.getElementById('previewRows'),
+        hasHeader: document.getElementById('hasHeader'),
+        loadPreviewBtn: document.getElementById('loadPreviewBtn'),
+        previewTable: document.getElementById('previewTable'),
+        previewMessage: document.getElementById('previewMessage'),
+        fileMeta: document.getElementById('fileMeta'),
+        processIdField: document.getElementById('processIdField'),
+        initiatingProcessIdField: document.getElementById('initiatingProcessIdField'),
+        initiatingProcessParentIdField: document.getElementById('initiatingProcessParentIdField'),
+        eventTimeField: document.getElementById('eventTimeField'),
+        processStartField: document.getElementById('processStartField'),
+        eventTypeField: document.getElementById('eventTypeField'),
+        scopeField: document.getElementById('scopeField'),
+        createValues: document.getElementById('createValues'),
+        endValues: document.getElementById('endValues'),
+        orderSelect: document.getElementById('orderSelect'),
+        maxNodesInput: document.getElementById('maxNodesInput'),
+        displayFields: document.getElementById('displayFields'),
+        autoPickFieldsBtn: document.getElementById('autoPickFieldsBtn'),
+        clearFieldsBtn: document.getElementById('clearFieldsBtn'),
+        analyzeBtn: document.getElementById('analyzeBtn'),
+        cancelBtn: document.getElementById('cancelBtn'),
+        progressBar: document.getElementById('progressBar'),
+        statusText: document.getElementById('statusText'),
+        warningsPane: document.getElementById('warningsPane'),
+        rootSelect: document.getElementById('rootSelect'),
+        renderBtn: document.getElementById('renderBtn'),
+        searchInput: document.getElementById('searchInput'),
+        searchMode: document.getElementById('searchMode'),
+        searchBtn: document.getElementById('searchBtn'),
+        clearSearchBtn: document.getElementById('clearSearchBtn'),
+        rootList: document.getElementById('rootList'),
+        searchResults: document.getElementById('searchResults'),
+        metricRows: document.getElementById('metricRows'),
+        metricInstances: document.getElementById('metricInstances'),
+        metricRoots: document.getElementById('metricRoots'),
+        metricOrder: document.getElementById('metricOrder'),
+        metricUnresolved: document.getElementById('metricUnresolved'),
+        metricWarnings: document.getElementById('metricWarnings'),
+        viewerMeta: document.getElementById('viewerMeta'),
+        canvasBadge: document.getElementById('canvasBadge'),
+        treeCanvas: document.getElementById('treeCanvas'),
+        viewer: document.getElementById('viewer'),
+        zoomInBtn: document.getElementById('zoomInBtn'),
+        zoomOutBtn: document.getElementById('zoomOutBtn'),
+        fitBtn: document.getElementById('fitBtn'),
+        resetViewBtn: document.getElementById('resetViewBtn'),
+        focusNodeInput: document.getElementById('focusNodeInput'),
+        focusBtn: document.getElementById('focusBtn'),
+        fontScaleInput: document.getElementById('fontScaleInput'),
+        selectedNodeSummary: document.getElementById('selectedNodeSummary'),
+        basicDetails: document.getElementById('basicDetails'),
+        fieldDetails: document.getElementById('fieldDetails'),
+        analysisNotes: document.getElementById('analysisNotes'),
+        basicDetailCard: document.getElementById('basicDetailCard'),
+        fieldDetailCard: document.getElementById('fieldDetailCard'),
+        analysisDetailCard: document.getElementById('analysisDetailCard'),
+        toggleBasicDetailBtn: document.getElementById('toggleBasicDetailBtn'),
+        toggleFieldDetailBtn: document.getElementById('toggleFieldDetailBtn'),
+        toggleAnalysisDetailBtn: document.getElementById('toggleAnalysisDetailBtn')
+      };
+
+      const canvas = els.treeCanvas;
+      const ctx = canvas.getContext('2d');
+      const BOX_WIDTH = 240;
+      const BOX_HEIGHT = 102;
+      const H_GAP = 120;
+      const V_GAP = 28;
+
+      function init() {
+        wireEvents();
+        syncDetailSections();
+        setSidebarOpen(true);
+        setDetailsOpen(true, { skipResize: true });
+        syncViewerLayoutHeight();
+        resizeCanvas();
+        populateFieldSelects([]);
+        renderEmptyCanvas('まだツリーを表示していません。');
+        updateFileMeta();
+      }
+
+      function wireEvents() {
+        els.openSettingsBtn.addEventListener('click', () => setSidebarOpen(true));
+        els.closeSettingsBtn.addEventListener('click', () => setSidebarOpen(false));
+        els.toggleDetailsBtn.addEventListener('click', () => setDetailsOpen(!state.detailsOpen));
+        els.openDetailsBtn.addEventListener('click', () => setDetailsOpen(true));
+        els.toggleBasicDetailBtn.addEventListener('click', () => toggleDetailSection('basic'));
+        els.toggleFieldDetailBtn.addEventListener('click', () => toggleDetailSection('fields'));
+        els.toggleAnalysisDetailBtn.addEventListener('click', () => toggleDetailSection('analysis'));
+        els.sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+        window.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && state.settingsOpen) setSidebarOpen(false);
+        });
+        els.fileInput.addEventListener('change', () => {
+          state.file = els.fileInput.files && els.fileInput.files[0] ? els.fileInput.files[0] : null;
+          updateFileMeta();
+        });
+        els.loadPreviewBtn.addEventListener('click', loadPreview);
+        els.hasHeader.addEventListener('change', () => {
+          if (state.file) loadPreview();
+        });
+        els.delimiterSelect.addEventListener('change', () => {
+          if (state.file) loadPreview();
+        });
+        els.encodingSelect.addEventListener('change', () => {
+          if (state.file) loadPreview();
+        });
+        els.autoPickFieldsBtn.addEventListener('click', autoSelectDisplayFields);
+        els.clearFieldsBtn.addEventListener('click', () => setDisplayFields([]));
+        els.maxNodesInput.addEventListener('input', () => {
+          if (state.maxNodesRerenderTimer) window.clearTimeout(state.maxNodesRerenderTimer);
+          state.maxNodesRerenderTimer = window.setTimeout(() => {
+            handleMaxNodesChanged();
+          }, 220);
+        });
+        els.maxNodesInput.addEventListener('change', handleMaxNodesChanged);
+        els.maxNodesInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') handleMaxNodesChanged();
+        });
+        els.analyzeBtn.addEventListener('click', startAnalysis);
+        els.cancelBtn.addEventListener('click', stopWorker);
+        els.renderBtn.addEventListener('click', () => requestRender(els.rootSelect.value || '__ALL__'));
+        els.searchBtn.addEventListener('click', runSearch);
+        els.clearSearchBtn.addEventListener('click', clearSearch);
+        els.searchInput.addEventListener('keydown', (event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') runSearch();
+        });
+        els.rootSelect.addEventListener('change', () => {
+          state.currentRootId = els.rootSelect.value;
+        });
+        els.zoomInBtn.addEventListener('click', () => zoomAroundCenter(1.15));
+        els.zoomOutBtn.addEventListener('click', () => zoomAroundCenter(1 / 1.15));
+        els.fitBtn.addEventListener('click', fitToView);
+        els.resetViewBtn.addEventListener('click', () => {
+          state.transform = { x: 40, y: 40, scale: 1 };
+          redraw();
+        });
+        els.focusBtn.addEventListener('click', focusNode);
+        els.fontScaleInput.addEventListener('input', () => {
+          state.textScale = Number(els.fontScaleInput.value || '1');
+          redraw();
+        });
+        window.addEventListener('resize', () => {
+          syncViewerLayoutHeight();
+          resizeCanvas();
+          redraw();
+        });
+
+        canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
+        canvas.addEventListener('mousedown', onCanvasMouseDown);
+        canvas.addEventListener('mousemove', onCanvasMouseMove);
+        window.addEventListener('mouseup', onCanvasMouseUp);
+        canvas.addEventListener('click', onCanvasClick);
+      }
+
+      function syncDetailSections() {
+        const defs = [
+          ['basic', els.basicDetailCard, els.toggleBasicDetailBtn],
+          ['fields', els.fieldDetailCard, els.toggleFieldDetailBtn],
+          ['analysis', els.analysisDetailCard, els.toggleAnalysisDetailBtn]
+        ];
+        defs.forEach(([key, card, btn]) => {
+          const open = state.detailSections[key] !== false;
+          if (card) card.classList.toggle('collapsed', !open);
+          if (btn) {
+            btn.textContent = open ? '畳む' : '開く';
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          }
+        });
+      }
+
+      function toggleDetailSection(key) {
+        state.detailSections[key] = !(state.detailSections[key] !== false);
+        syncDetailSections();
+      }
+
+      function setSidebarOpen(open) {
+        state.settingsOpen = !!open;
+        document.body.classList.toggle('settings-collapsed', !state.settingsOpen);
+        els.openSettingsBtn.setAttribute('aria-expanded', state.settingsOpen ? 'true' : 'false');
+        els.closeSettingsBtn.setAttribute('aria-expanded', state.settingsOpen ? 'true' : 'false');
+        els.openSettingsBtn.textContent = state.settingsOpen ? '設定' : '設定を開く';
+      }
+
+      function setDetailsOpen(open, options = {}) {
+        state.detailsOpen = !!open;
+        document.body.classList.toggle('details-collapsed', !state.detailsOpen);
+        els.openDetailsBtn.setAttribute('aria-expanded', state.detailsOpen ? 'true' : 'false');
+        els.toggleDetailsBtn.setAttribute('aria-expanded', state.detailsOpen ? 'true' : 'false');
+        els.toggleDetailsBtn.textContent = state.detailsOpen ? '右ペインを畳む' : '右ペインを開く';
+        els.openDetailsBtn.textContent = '右ペインを開く';
+        if (!options.skipResize) {
+          window.requestAnimationFrame(() => {
+            syncViewerLayoutHeight();
+            resizeCanvas();
+            redraw();
+          });
+        }
+      }
+
+      function handleMaxNodesChanged() {
+        if (state.maxNodesRerenderTimer) {
+          window.clearTimeout(state.maxNodesRerenderTimer);
+          state.maxNodesRerenderTimer = null;
+        }
+        const value = clamp(Number(els.maxNodesInput.value || '5000'), 100, 20000);
+        els.maxNodesInput.value = String(value);
+        if (!state.worker || !state.summary) return;
+        if (state.currentTree && state.currentTree.filtered && els.searchInput.value.trim()) {
+          runSearch();
+        } else {
+          requestRender(els.rootSelect.value || state.currentRootId || '__ALL__');
+        }
+      }
+
+      function updateFileMeta() {
+        els.fileMeta.innerHTML = '';
+        if (!state.file) {
+          appendChip(els.fileMeta, 'ファイル未選択');
+          return;
+        }
+        appendChip(els.fileMeta, state.file.name);
+        appendChip(els.fileMeta, formatBytes(state.file.size));
+        appendChip(els.fileMeta, `更新: ${new Date(state.file.lastModified).toLocaleString()}`);
+      }
+
+      async function loadPreview() {
+        if (!state.file) {
+          els.previewMessage.textContent = '先にCSVファイルを選択してください。';
+          return;
+        }
+        els.previewMessage.textContent = 'プレビューを読み込んでいます…';
+        const encoding = els.encodingSelect.value;
+        const requestedRows = clamp(Number(els.previewRows.value || '10'), 10, 50);
+        let delimiter = els.delimiterSelect.value;
+        try {
+          const result = await readPreviewRows(state.file, encoding, delimiter, requestedRows, els.hasHeader.checked);
+          state.previewRows = result.rows;
+          state.previewDelimiter = result.delimiter;
+          state.columns = result.columns;
+          renderPreview(result.columns, result.rows, els.hasHeader.checked);
+          populateFieldSelects(result.columns);
+          renderDisplayFieldChecks(result.columns);
+          autoSelectCommonFields();
+          els.previewMessage.textContent = `プレビュー完了: ${result.rows.length} 行 / 区切り文字 ${displayDelimiter(result.delimiter)}`;
+        } catch (error) {
+          els.previewMessage.textContent = `プレビュー失敗: ${error.message || error}`;
+        }
+      }
+
+      async function readPreviewRows(file, encoding, delimiterMode, requestedRows, hasHeader) {
+        const previewLimit = requestedRows + (hasHeader ? 1 : 0);
+        const parserState = createCsvParserState(',');
+        let delimiter = delimiterMode === 'auto' ? null : decodeDelimiter(delimiterMode);
+        let offset = 0;
+        const chunkSize = 1024 * 256;
+        let rows = [];
+
+        while (rows.length < previewLimit && offset < file.size) {
+          const blob = file.slice(offset, offset + chunkSize);
+          const fallbackText = await blob.text();
+          const decoded = await decodeText(blob, encoding, fallbackText);
+          if (!delimiter) {
+            delimiter = detectDelimiter(decoded);
+            parserState.delimiter = delimiter;
+          } else {
+            parserState.delimiter = delimiter;
+          }
+          parseCsvChunk(decoded, parserState, (row) => {
+            rows.push(row);
+          }, previewLimit - rows.length);
+          offset += chunkSize;
+        }
+
+        if (rows.length < previewLimit) {
+          finalizeCsvParser(parserState, (row) => rows.push(row));
+        }
+
+        const headerRow = hasHeader && rows.length ? rows[0] : null;
+        const dataRows = hasHeader ? rows.slice(1, requestedRows + 1) : rows.slice(0, requestedRows);
+        const columnCount = Math.max(headerRow ? headerRow.length : 0, ...dataRows.map(r => r.length), 0);
+        const columns = headerRow ? uniquifyColumns(headerRow, columnCount) : makeSyntheticColumns(columnCount);
+        return { rows: dataRows, columns, delimiter: delimiter || ',' };
+      }
+
+      function decodeText(blob, encoding, fallbackText) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            try {
+              const decoder = new TextDecoder(encoding || 'utf-8', { fatal: false });
+              resolve(decoder.decode(reader.result));
+            } catch {
+              resolve(fallbackText);
+            }
+          };
+          reader.onerror = () => resolve(fallbackText);
+          reader.readAsArrayBuffer(blob);
+        });
+      }
+
+      function renderPreview(columns, rows, hasHeader) {
+        const table = els.previewTable;
+        table.innerHTML = '';
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        const rowNoHead = document.createElement('th');
+        rowNoHead.textContent = '#';
+        headRow.appendChild(rowNoHead);
+        columns.forEach((name, idx) => {
+          const th = document.createElement('th');
+          th.textContent = `${name}`;
+          th.title = `${idx + 1}: ${name}`;
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        const tbody = document.createElement('tbody');
+        rows.forEach((row, rowIdx) => {
+          const tr = document.createElement('tr');
+          const tdIndex = document.createElement('td');
+          tdIndex.textContent = String(rowIdx + 1 + (hasHeader ? 1 : 0));
+          tr.appendChild(tdIndex);
+          for (let i = 0; i < columns.length; i += 1) {
+            const td = document.createElement('td');
+            td.textContent = row[i] ?? '';
+            td.title = row[i] ?? '';
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+      }
+
+      function populateFieldSelects(columns) {
+        const selects = [els.processIdField, els.initiatingProcessIdField, els.initiatingProcessParentIdField, els.eventTimeField, els.processStartField, els.eventTypeField, els.scopeField];
+        selects.forEach((select) => {
+          const keep = select.value;
+          select.innerHTML = '';
+          const blank = document.createElement('option');
+          blank.value = '-1';
+          blank.textContent = '未指定';
+          select.appendChild(blank);
+          columns.forEach((name, idx) => {
+            const opt = document.createElement('option');
+            opt.value = String(idx);
+            opt.textContent = `${idx + 1}: ${name}`;
+            select.appendChild(opt);
+          });
+          if ([els.processIdField, els.initiatingProcessIdField, els.initiatingProcessParentIdField].includes(select)) {
+            blank.textContent = '選択してください';
+          }
+          if (keep && [...select.options].some(opt => opt.value === keep)) {
+            select.value = keep;
+          } else {
+            select.value = '-1';
+          }
+        });
+        autoPickMapping(columns);
+      }
+
+      function autoPickMapping(columns) {
+        const lower = columns.map(name => String(name || '').toLowerCase());
+        setIfFound(els.processIdField, findColumnIndex(lower, ['processid', 'process_id', 'process id']));
+        setIfFound(els.initiatingProcessIdField, findColumnIndex(lower, ['initiatingprocessid', 'initiating process id', 'initiating_process_id']));
+        setIfFound(els.initiatingProcessParentIdField, findColumnIndex(lower, ['initiatingprocessparentid', 'initiating process parent id', 'initiating_process_parent_id', 'initiatingparentprocessid']));
+        setIfFound(els.eventTimeField, findColumnIndex(lower, ['timestamp', 'eventtime', 'event time', 'timegenerated', 'event_timestamp', 'time']));
+        setIfFound(els.processStartField, findColumnIndex(lower, ['processstart', 'process start', 'starttime', 'creationtime', 'process_creation_time']));
+        setIfFound(els.eventTypeField, findColumnIndex(lower, ['eventtype', 'event type', 'action', 'operation', 'event_name']));
+        setIfFound(els.scopeField, findColumnIndex(lower, ['device', 'deviceid', 'hostname', 'host', 'computer', 'agentid', 'endpoint']));
+      }
+
+      function renderDisplayFieldChecks(columns) {
+        els.displayFields.innerHTML = '';
+        if (!columns.length) {
+          els.displayFields.innerHTML = '<div class="empty">プレビュー読込後に列一覧が表示されます。</div>';
+          return;
+        }
+        columns.forEach((name, idx) => {
+          const wrapper = document.createElement('label');
+          wrapper.className = 'field-check';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = String(idx);
+          checkbox.dataset.fieldIndex = String(idx);
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const title = document.createElement('div');
+          title.className = 'name';
+          title.textContent = name;
+          const index = document.createElement('div');
+          index.className = 'index';
+          index.textContent = `${idx + 1}`;
+          meta.appendChild(title);
+          meta.appendChild(index);
+          wrapper.appendChild(checkbox);
+          wrapper.appendChild(meta);
+          els.displayFields.appendChild(wrapper);
+        });
+      }
+
+      function setDisplayFields(indices) {
+        const wanted = new Set(indices.map(String));
+        els.displayFields.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          input.checked = wanted.has(input.value);
+        });
+      }
+
+      function getDisplayFieldIndices() {
+        return [...els.displayFields.querySelectorAll('input[type="checkbox"]:checked')].map(input => Number(input.value));
+      }
+
+      function autoSelectCommonFields() {
+        if (!state.columns.length) return;
+        const lower = state.columns.map(name => String(name || '').toLowerCase());
+        const matches = [];
+        const keys = ['imagename', 'processname', 'filename', 'commandline', 'path', 'user', 'sha256', 'md5'];
+        lower.forEach((name, idx) => {
+          if (keys.some(key => name.includes(key) || name.includes(key.replace('name', ' name')))) {
+            matches.push(idx);
+          }
+        });
+        if (matches.length) setDisplayFields(matches.slice(0, 6));
+      }
+
+      function autoSelectDisplayFields() {
+        autoSelectCommonFields();
+      }
+
+      function buildConfig() {
+        const processIdFieldIndex = Number(els.processIdField.value);
+        const initiatingProcessIdFieldIndex = Number(els.initiatingProcessIdField.value);
+        const initiatingProcessParentIdFieldIndex = Number(els.initiatingProcessParentIdField.value);
+        if (processIdFieldIndex < 0 || initiatingProcessIdFieldIndex < 0 || initiatingProcessParentIdFieldIndex < 0) {
+          throw new Error('ProcessID / InitiatingProcessID / InitiatingProcessParentID の3列は必須です。');
+        }
+        return {
+          hasHeader: els.hasHeader.checked,
+          delimiter: state.previewDelimiter || decodeDelimiter(els.delimiterSelect.value),
+          encoding: els.encodingSelect.value,
+          processIdFieldIndex,
+          initiatingProcessIdFieldIndex,
+          initiatingProcessParentIdFieldIndex,
+          eventTimeFieldIndex: parseOptionalSelect(els.eventTimeField.value),
+          processStartFieldIndex: parseOptionalSelect(els.processStartField.value),
+          eventTypeFieldIndex: parseOptionalSelect(els.eventTypeField.value),
+          scopeFieldIndex: parseOptionalSelect(els.scopeField.value),
+          createValues: normalizeTokenList(els.createValues.value),
+          endValues: normalizeTokenList(els.endValues.value),
+          orderMode: els.orderSelect.value,
+          displayFields: getDisplayFieldIndices()
+        };
+      }
+
+      function startAnalysis() {
+        if (!state.file) {
+          setStatus('先にCSVファイルを選択してください。', 0);
+          return;
+        }
+        if (!state.columns.length) {
+          setStatus('先にプレビューを読み込み、列を確定してください。', 0);
+          return;
+        }
+        let config;
+        try {
+          config = buildConfig();
+        } catch (error) {
+          setStatus(error.message || String(error), 0);
+          return;
+        }
+        stopWorker();
+        state.worker = createWorker();
+        attachWorkerEvents(state.worker);
+        els.cancelBtn.disabled = false;
+        els.renderBtn.disabled = true;
+        els.searchBtn.disabled = true;
+        setStatus('解析を開始します…', 0.01);
+        state.worker.postMessage({ type: 'analyze', file: state.file, config, columns: state.columns });
+      }
+
+      function createWorker() {
+        const source = document.getElementById('worker-template').textContent;
+        const blob = new Blob([source], { type: 'application/javascript' });
+        return new Worker(URL.createObjectURL(blob));
+      }
+
+      function attachWorkerEvents(worker) {
+        worker.onmessage = (event) => {
+          const msg = event.data || {};
+          if (msg.type === 'status') {
+            const orderText = msg.resolvedOrder ? ` / ${msg.resolvedOrder === 'asc' ? '古い順' : '新しい順'}` : '';
+            setStatus(`${msg.message}${orderText}`, msg.progress || 0);
+          } else if (msg.type === 'complete') {
+            state.summary = msg.summary;
+            updateSummary(msg.summary, msg.warnings || []);
+            updateRoots(msg.roots || [], msg.defaultRootId || '__ALL__');
+            setStatus('解析完了', 1);
+            els.cancelBtn.disabled = true;
+            els.renderBtn.disabled = false;
+            els.searchBtn.disabled = false;
+            requestRender(msg.defaultRootId || '__ALL__');
+          } else if (msg.type === 'subtree') {
+            state.currentTree = msg;
+            buildLayoutAndRender(msg);
+          } else if (msg.type === 'search-tree') {
+            renderSearchResults(msg.results || [], msg.matchCount || 0, msg.terms || [], msg.mode || 'or');
+            state.currentTree = msg;
+            buildLayoutAndRender(msg);
+            setStatus(`検索完了: ${formatNumber(msg.matchCount || 0)} 件ヒット`, 1);
+          } else if (msg.type === 'node-detail') {
+            state.selectedNodeDetail = msg.node;
+            renderNodeDetail(msg.node);
+          } else if (msg.type === 'error') {
+            setStatus(`エラー: ${msg.message}`, 1);
+            els.cancelBtn.disabled = true;
+          }
+        };
+        worker.onerror = (error) => {
+          setStatus(`Worker error: ${error.message || error}`, 1);
+          els.cancelBtn.disabled = true;
+        };
+      }
+
+      function stopWorker() {
+        if (state.worker) {
+          state.worker.terminate();
+          state.worker = null;
+        }
+        els.cancelBtn.disabled = true;
+      }
+
+      function requestRender(rootId) {
+        if (!state.worker) return;
+        state.currentRootId = rootId;
+        state.pendingSubtreeRoot = rootId;
+        setStatus('描画用データを取得しています…', 1);
+        state.worker.postMessage({
+          type: 'render-subtree',
+          rootId,
+          maxNodes: clamp(Number(els.maxNodesInput.value || '5000'), 100, 20000)
+        });
+      }
+
+      function runSearch() {
+        if (!state.worker) return;
+        const query = els.searchInput.value.trim();
+        if (!query) return;
+        els.searchResults.innerHTML = '<div class="empty">検索中…</div>';
+        setStatus('検索条件に一致するノードと関連ノードを抽出しています…', 1);
+        state.worker.postMessage({
+          type: 'search-tree',
+          query,
+          mode: els.searchMode.value,
+          limit: 50,
+          maxNodes: clamp(Number(els.maxNodesInput.value || '5000'), 100, 20000)
+        });
+      }
+
+      function clearSearch() {
+        els.searchInput.value = '';
+        els.searchResults.innerHTML = '';
+        if (state.worker) {
+          requestRender(els.rootSelect.value || state.currentRootId || '__ALL__');
+        }
+      }
+
+      function updateSummary(summary, warnings) {
+        els.metricRows.textContent = formatNumber(summary.rows);
+        els.metricInstances.textContent = formatNumber(summary.instances);
+        els.metricRoots.textContent = formatNumber(summary.roots);
+        els.metricOrder.textContent = summary.resolvedOrder === 'desc' ? '新→古' : '古→新';
+        els.metricUnresolved.textContent = formatNumber(summary.unresolvedParents);
+        els.metricWarnings.textContent = formatNumber(warnings.length || 0);
+        renderWarnings(warnings);
+        els.viewerMeta.innerHTML = '';
+        appendChip(els.viewerMeta, `開始時刻列: ${formatNumber(summary.exact)}`);
+        appendChip(els.viewerMeta, `作成イベント: ${formatNumber(summary.create)}`);
+        appendChip(els.viewerMeta, `推定: ${formatNumber(summary.approx)}`);
+        appendChip(els.viewerMeta, `低信頼: ${formatNumber(summary.low)}`);
+      }
+
+      function renderWarnings(warnings) {
+        els.warningsPane.innerHTML = '';
+        if (!warnings || !warnings.length) {
+          els.warningsPane.innerHTML = '<div class="empty">警告はありません。</div>';
+          return;
+        }
+        warnings.forEach((warning) => {
+          const div = document.createElement('div');
+          div.className = 'warning-box';
+          div.textContent = warning;
+          els.warningsPane.appendChild(div);
+        });
+      }
+
+      function updateRoots(roots, defaultRootId) {
+        els.rootSelect.innerHTML = '';
+        const allOpt = document.createElement('option');
+        allOpt.value = '__ALL__';
+        allOpt.textContent = '全ルート（最大ノード数で制限）';
+        els.rootSelect.appendChild(allOpt);
+        roots.forEach((root) => {
+          const opt = document.createElement('option');
+          opt.value = String(root.id);
+          opt.textContent = `${root.label} / size=${root.size}`;
+          els.rootSelect.appendChild(opt);
+        });
+        els.rootSelect.value = String(defaultRootId || '__ALL__');
+        state.currentRootId = els.rootSelect.value;
+        renderRootList(roots);
+      }
+
+      function renderRootList(roots) {
+        els.rootList.innerHTML = '';
+        if (!roots || !roots.length) {
+          els.rootList.innerHTML = '<div class="empty">ルート候補はまだありません。</div>';
+          return;
+        }
+        roots.slice(0, 20).forEach((root) => {
+          const btn = document.createElement('button');
+          btn.className = 'item-btn';
+          btn.innerHTML = `<strong>${escapeHtml(root.label)}</strong><div class="small muted">subtree=${formatNumber(root.size)} / ${escapeHtml(root.confidence)}</div>`;
+          btn.addEventListener('click', () => {
+            els.rootSelect.value = String(root.id);
+            requestRender(String(root.id));
+          });
+          els.rootList.appendChild(btn);
+        });
+      }
+
+      function renderSearchResults(results, matchCount, terms, mode) {
+        els.searchResults.innerHTML = '';
+        const summary = document.createElement('div');
+        summary.className = 'search-summary';
+        if (terms && terms.length) {
+          summary.textContent = `${terms.join(' / ')} / ${mode === 'and' ? 'AND' : 'OR'} / ヒット ${formatNumber(matchCount || 0)} 件`;
+          els.searchResults.appendChild(summary);
+        }
+        if (!results || !results.length) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = '該当するノードは見つかりませんでした。';
+          els.searchResults.appendChild(empty);
+          return;
+        }
+        results.forEach((item) => {
+          const btn = document.createElement('button');
+          btn.className = 'item-btn';
+          btn.innerHTML = `<strong>${escapeHtml(item.label)}</strong><div class="small muted">subtree=${formatNumber(item.size)} / nodeId=${item.id}</div>`;
+          btn.addEventListener('click', () => {
+            if (state.currentTree && state.currentTree.nodes && state.currentTree.nodes.some(node => node.id === item.id)) {
+              centerOnNode(item.id);
+            } else {
+              requestRender(String(item.id));
+            }
+          });
+          els.searchResults.appendChild(btn);
+        });
+      }
+
+      function buildLayoutAndRender(treePayload) {
+        const nodes = treePayload.nodes || [];
+        if (!nodes.length) {
+          renderEmptyCanvas('表示対象のノードがありません。');
+          return;
+        }
+        const nodeMap = new Map(nodes.map(node => [node.id, { ...node, children: [] }]));
+        const roots = [];
+        nodeMap.forEach((node) => {
+          if (node.parentId && nodeMap.has(node.parentId)) {
+            nodeMap.get(node.parentId).children.push(node);
+          } else {
+            roots.push(node);
+          }
+        });
+        roots.sort((a, b) => (b.subtreeSize || 1) - (a.subtreeSize || 1));
+
+        let cursorY = 0;
+        function place(node, depth) {
+          node.depth = depth;
+          node.width = BOX_WIDTH;
+          node.height = BOX_HEIGHT;
+          node.children.sort((a, b) => (b.subtreeSize || 1) - (a.subtreeSize || 1));
+          if (!node.children.length) {
+            node.layoutX = depth * (BOX_WIDTH + H_GAP);
+            node.layoutY = cursorY * (BOX_HEIGHT + V_GAP);
+            cursorY += 1;
+            return;
+          }
+          const startY = cursorY;
+          node.children.forEach((child) => place(child, depth + 1));
+          const endY = cursorY - 1;
+          node.layoutX = depth * (BOX_WIDTH + H_GAP);
+          node.layoutY = ((startY + endY) / 2) * (BOX_HEIGHT + V_GAP);
+        }
+        roots.forEach((root) => {
+          place(root, 0);
+          cursorY += 0.7;
+        });
+
+        const layoutNodes = [...nodeMap.values()];
+        state.currentTree = {
+          ...treePayload,
+          nodes: layoutNodes,
+          bounds: computeBounds(layoutNodes)
+        };
+        const previousSelectedId = state.selectedNodeId;
+        const selectedId = previousSelectedId && nodeMap.has(previousSelectedId)
+          ? previousSelectedId
+          : (layoutNodes[0]?.id || null);
+        state.selectedNodeId = selectedId;
+        fitToView();
+        if (selectedId) {
+          requestNodeDetail(selectedId);
+        } else {
+          redraw();
+        }
+      }
+
+      function computeBounds(nodes) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        nodes.forEach((node) => {
+          minX = Math.min(minX, node.layoutX);
+          minY = Math.min(minY, node.layoutY);
+          maxX = Math.max(maxX, node.layoutX + BOX_WIDTH);
+          maxY = Math.max(maxY, node.layoutY + BOX_HEIGHT);
+        });
+        if (!nodes.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        return { minX, minY, maxX, maxY };
+      }
+
+      function redraw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!state.currentTree || !state.currentTree.nodes || !state.currentTree.nodes.length) {
+          renderEmptyCanvas('まだツリーを表示していません。');
+          return;
+        }
+
+        const { x, y, scale } = state.transform;
+        const textScale = state.textScale || 1;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(scale, scale);
+
+        const nodeMap = new Map(state.currentTree.nodes.map(node => [node.id, node]));
+        state.worldRects = [];
+
+        ctx.lineWidth = 2 / scale;
+        nodeMap.forEach((node) => {
+          if (!node.parentId || !nodeMap.has(node.parentId)) return;
+          const parent = nodeMap.get(node.parentId);
+          const fromX = parent.layoutX + BOX_WIDTH;
+          const fromY = parent.layoutY + BOX_HEIGHT / 2;
+          const toX = node.layoutX;
+          const toY = node.layoutY + BOX_HEIGHT / 2;
+          const midX = (fromX + toX) / 2;
+          ctx.beginPath();
+          ctx.strokeStyle = node.unresolvedParent ? 'rgba(255, 141, 141, 0.55)' : 'rgba(141, 198, 255, 0.45)';
+          ctx.moveTo(fromX, fromY);
+          ctx.bezierCurveTo(midX, fromY, midX, toY, toX, toY);
+          ctx.stroke();
+        });
+
+        state.currentTree.nodes.forEach((node) => {
+          drawNode(node, scale, textScale);
+        });
+
+        ctx.restore();
+        updateCanvasBadge();
+      }
+
+      function drawNode(node, scale, textScale) {
+        const selected = state.selectedNodeId === node.id;
+        const rect = { x: node.layoutX, y: node.layoutY, width: BOX_WIDTH, height: BOX_HEIGHT, nodeId: node.id };
+        state.worldRects.push(rect);
+
+        const confidenceStyles = {
+          exact: { fill: 'rgba(52, 133, 94, 0.88)', stroke: '#57d7a4' },
+          create: { fill: 'rgba(39, 89, 142, 0.88)', stroke: '#6bb8ff' },
+          approx: { fill: 'rgba(141, 107, 31, 0.88)', stroke: '#f6c55b' },
+          low: { fill: 'rgba(125, 57, 57, 0.88)', stroke: '#f59191' }
+        };
+        const style = node.synthetic
+          ? { fill: 'rgba(74, 78, 98, 0.88)', stroke: '#c8d2ea' }
+          : (confidenceStyles[node.confidence] || confidenceStyles.low);
+
+        roundRect(ctx, rect.x, rect.y, rect.width, rect.height, 14);
+        ctx.fillStyle = selected ? 'rgba(255,255,255,0.12)' : style.fill;
+        ctx.fill();
+        ctx.lineWidth = selected ? 3 / scale : (node.isMatched ? 2.8 / scale : 2 / scale);
+        ctx.strokeStyle = selected ? '#ffffff' : (node.isMatched ? '#ffffff' : style.stroke);
+        ctx.stroke();
+
+        ctx.fillStyle = 'white';
+        let textY = rect.y + 20;
+        const lines = node.labels && node.labels.length ? node.labels : [`PID ${node.pid}`];
+        lines.slice(0, 3).forEach((line, index) => {
+          ctx.font = `${Math.max(11, (index === 0 ? 14 : 12) * textScale) / scale}px system-ui, sans-serif`;
+          ctx.fillText(shorten(line, index === 0 ? 42 : 50), rect.x + 12, textY);
+          textY += (index === 0 ? 19 : 16);
+        });
+
+        ctx.font = `${Math.max(10, 11 * textScale) / scale}px system-ui, sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.fillText(`#${node.id} / subtree ${node.subtreeSize}`, rect.x + 12, rect.y + rect.height - 28);
+        ctx.fillText(shorten(buildChildStatusShort(node), 34), rect.x + 12, rect.y + rect.height - 12);
+      }
+
+      function renderEmptyCanvas(message) {
+        resizeCanvas();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'rgba(220, 231, 255, 0.8)';
+        ctx.font = '16px system-ui, sans-serif';
+        ctx.fillText(message, 30, 42);
+        state.worldRects = [];
+        updateCanvasBadge();
+      }
+
+      function fitToView() {
+        if (!state.currentTree || !state.currentTree.bounds) {
+          redraw();
+          return;
+        }
+        const bounds = state.currentTree.bounds;
+        const padding = 40;
+        const viewW = canvas.width / (window.devicePixelRatio || 1);
+        const viewH = canvas.height / (window.devicePixelRatio || 1);
+        const treeW = Math.max(1, bounds.maxX - bounds.minX + padding * 2);
+        const treeH = Math.max(1, bounds.maxY - bounds.minY + padding * 2);
+        const scale = Math.min(viewW / treeW, viewH / treeH, 1.2);
+        state.transform.scale = scale;
+        state.transform.x = -bounds.minX * scale + (viewW - (bounds.maxX - bounds.minX) * scale) / 2;
+        state.transform.y = -bounds.minY * scale + (viewH - (bounds.maxY - bounds.minY) * scale) / 2;
+        redraw();
+      }
+
+      function zoomAroundCenter(factor) {
+        const cx = canvas.clientWidth / 2;
+        const cy = canvas.clientHeight / 2;
+        zoomAtPoint(cx, cy, factor);
+      }
+
+      function zoomAtPoint(screenX, screenY, factor) {
+        const oldScale = state.transform.scale;
+        const newScale = clamp(oldScale * factor, 0.15, 2.5);
+        const worldX = (screenX - state.transform.x) / oldScale;
+        const worldY = (screenY - state.transform.y) / oldScale;
+        state.transform.scale = newScale;
+        state.transform.x = screenX - worldX * newScale;
+        state.transform.y = screenY - worldY * newScale;
+        redraw();
+      }
+
+      function onCanvasWheel(event) {
+        event.preventDefault();
+        const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+        zoomAtPoint(event.offsetX, event.offsetY, factor);
+      }
+
+      function onCanvasMouseDown(event) {
+        state.dragging = true;
+        state.lastPointer = { x: event.clientX, y: event.clientY };
+      }
+
+      function onCanvasMouseMove(event) {
+        if (!state.dragging || !state.lastPointer) return;
+        const dx = event.clientX - state.lastPointer.x;
+        const dy = event.clientY - state.lastPointer.y;
+        state.transform.x += dx;
+        state.transform.y += dy;
+        state.lastPointer = { x: event.clientX, y: event.clientY };
+        redraw();
+      }
+
+      function onCanvasMouseUp() {
+        state.dragging = false;
+        state.lastPointer = null;
+      }
+
+      function onCanvasClick(event) {
+        const worldX = (event.offsetX - state.transform.x) / state.transform.scale;
+        const worldY = (event.offsetY - state.transform.y) / state.transform.scale;
+        const hit = state.worldRects.find(rect => worldX >= rect.x && worldX <= rect.x + rect.width && worldY >= rect.y && worldY <= rect.y + rect.height);
+        if (!hit) return;
+        selectNode(hit.nodeId, { autoOpenOnChange: true });
+      }
+
+      function selectNode(nodeId, options = {}) {
+        const changed = state.selectedNodeId !== nodeId;
+        state.selectedNodeId = nodeId;
+        if (options.autoOpenOnChange && changed) {
+          setDetailsOpen(true);
+        }
+        redraw();
+        requestNodeDetail(nodeId);
+      }
+
+      function requestNodeDetail(nodeId) {
+        if (!state.worker) return;
+        state.worker.postMessage({ type: 'node-detail', nodeId });
+      }
+
+      function renderNodeDetail(node) {
+        if (!node) {
+          els.selectedNodeSummary.textContent = 'ノード情報を取得できません。';
+          els.basicDetails.innerHTML = '';
+          els.fieldDetails.innerHTML = '';
+          return;
+        }
+        const renderNode = state.currentTree && state.currentTree.nodes
+          ? state.currentTree.nodes.find(item => item.id === node.id)
+          : null;
+        els.selectedNodeSummary.innerHTML = node.synthetic
+          ? `<strong>#${node.id}</strong> 推定親 PID ${escapeHtml(node.pid)}${node.scope ? ` @ ${escapeHtml(node.scope)}` : ''}`
+          : `<strong>#${node.id}</strong> PID ${escapeHtml(node.pid)}${node.scope ? ` @ ${escapeHtml(node.scope)}` : ''}`;
+        const basics = [
+          ['Node ID', node.id],
+          ['種別', node.synthetic ? '推定親' : '観測ノード'],
+          ['PID', node.pid],
+          ['PPID', node.ppid || ''],
+          ['Scope', node.scope || ''],
+          ['親ノード', node.parentId || 'なし'],
+          ['親解決', node.parentResolutionLabel || ''],
+          ['子孫数', node.subtreeSize],
+          ['行数', node.rowCount],
+          ['確度', node.confidenceLabel],
+          ['アンカー', node.anchorLabel],
+          ['代表行', node.synthetic ? '(なし)' : (node.representativeRow || '')],
+          ['開始時刻', node.startTimeRaw || node.earliestTimeRaw || ''],
+          ['終了時刻', node.endTimeRaw || node.latestTimeRaw || ''],
+          ['代表イベント', node.representativeEventType || ''],
+          ['子表示状態', buildChildStatusDetail(renderNode)]
+        ];
+        if (node.synthetic) {
+          basics.splice(6, 0, ['推定子数', node.inferredChildCount || 0]);
+        }
+        els.basicDetails.innerHTML = basics.map(([k, v]) => `<dt>${escapeHtml(String(k))}</dt><dd>${escapeHtml(String(v ?? ''))}</dd>`).join('');
+        els.fieldDetails.innerHTML = node.synthetic
+          ? '<dt>代表行</dt><dd>推定親ノードのため、元行は存在しません。</dd>'
+          : (node.allFields || []).length
+            ? node.allFields.map(field => `<dt>${escapeHtml(field.name)}</dt><dd>${escapeHtml(field.value || '')}</dd>`).join('')
+            : '<dt>全項目</dt><dd>情報なし</dd>';
+        els.analysisNotes.innerHTML = buildAnalysisNote(node, renderNode);
+      }
+
+      function buildAnalysisNote(node, renderNode) {
+        if (!node) return '';
+        const notes = [];
+        if (node.synthetic) {
+          notes.push('このノードは <strong>親実体がログ中で見つからなかったため生成した推定親</strong> です。ログ取得開始前から存在していた、または当該PIDの親実体が欠落している可能性があります。');
+          if (node.inferredContext === 'before_first_observed_parent' || node.inferredContext === 'no_observed_parent') {
+            notes.push('この推定親は、同じPIDの観測済み親実体より前に存在していたと推定しています。');
+          } else if (node.inferredContext === 'after_last_observed_parent') {
+            notes.push('この推定親は、同じPIDの既知親実体より後の世代として扱っています。');
+          } else if (node.inferredContext === 'between_observed_parent_generations') {
+            notes.push('この推定親は、観測済みの親世代と親世代の間にある欠落区間として扱っています。');
+          }
+        } else if (node.confidence === 'exact') {
+          notes.push('このノードは <strong>プロセス開始時刻列</strong> を使ってPID再利用を識別しています。');
+        } else if (node.confidence === 'create') {
+          notes.push('このノードは <strong>ProcessID またはプロセス作成イベント</strong> を開始点としてPID再利用を識別しています。');
+        } else if (node.confidence === 'approx') {
+          notes.push('このノードは <strong>イベント時刻とログ順</strong> を使った近似推定です。');
+        } else {
+          notes.push('このノードは <strong>行順のみ</strong> を使った低信頼推定です。');
+        }
+        if (node.parentResolution === 'synthetic_missing') {
+          notes.push('実親はログ内で見つからなかったため、推定親ノード配下に表示しています。');
+        } else if (node.unresolvedParent) {
+          notes.push('親候補は未解決です。');
+        }
+        if (renderNode && renderNode.hiddenDescendantsByLimit > 0) {
+          notes.push(`表示上限のため、このノード配下で ${formatNumber(renderNode.hiddenDescendantsByLimit)} 件のノードを省略しています。`);
+        } else if (renderNode && renderNode.hiddenDescendantsByFilter > 0) {
+          notes.push(`検索表示のため、このノード配下で ${formatNumber(renderNode.hiddenDescendantsByFilter)} 件のノードを非表示にしています。`);
+        } else if (renderNode && renderNode.totalChildren === 0) {
+          notes.push('このノードは末端で、これ以上の子ノードはありません。');
+        } else if (renderNode) {
+          notes.push('このノード配下は現在の条件で最後まで表示できています。');
+        }
+        return notes.join('<br>');
+      }
+
+      function buildChildStatusShort(node) {
+        if (!node) return '子 ?/?';
+        if ((node.totalChildren || 0) === 0 && (node.hiddenDescendantsByLimit || 0) === 0 && (node.hiddenDescendantsByFilter || 0) === 0) return '子 0/0';
+        const parts = [`子 ${node.renderedChildren || 0}/${node.totalChildren || 0}`];
+        if ((node.hiddenChildrenByFilter || 0) > 0) parts.push(`条件外+${node.hiddenChildrenByFilter}`);
+        if ((node.hiddenChildrenByLimit || 0) > 0) parts.push(`上限+${node.hiddenChildrenByLimit}`);
+        const deepLimitOnly = Math.max(0, (node.hiddenDescendantsByLimit || 0) - (node.hiddenChildrenByLimit || 0));
+        if (deepLimitOnly > 0) parts.push(`配下上限+${deepLimitOnly}`);
+        const deepFilterOnly = Math.max(0, (node.hiddenDescendantsByFilter || 0) - (node.hiddenChildrenByFilter || 0));
+        if (deepFilterOnly > 0) parts.push(`配下条件外+${deepFilterOnly}`);
+        return parts.join(' ');
+      }
+
+      function buildChildStatusDetail(node) {
+        if (!node) return '現在の表示情報なし';
+        if ((node.totalChildren || 0) === 0 && (node.hiddenDescendantsByLimit || 0) === 0 && (node.hiddenDescendantsByFilter || 0) === 0) return '子ノードなし';
+        const parts = [`${node.renderedChildren || 0} / ${node.totalChildren || 0} 件の直下子を表示`];
+        if ((node.hiddenChildrenByFilter || 0) > 0) parts.push(`${node.hiddenChildrenByFilter} 件の直下子は検索条件外`);
+        if ((node.hiddenChildrenByLimit || 0) > 0) parts.push(`${node.hiddenChildrenByLimit} 件の直下子は上限超過で省略`);
+        const deepLimitOnly = Math.max(0, (node.hiddenDescendantsByLimit || 0) - (node.hiddenChildrenByLimit || 0));
+        if (deepLimitOnly > 0) parts.push(`さらに配下で ${deepLimitOnly} 件を上限超過で省略`);
+        const deepFilterOnly = Math.max(0, (node.hiddenDescendantsByFilter || 0) - (node.hiddenChildrenByFilter || 0));
+        if (deepFilterOnly > 0) parts.push(`さらに配下で ${deepFilterOnly} 件を検索条件外として非表示`);
+        if ((node.hiddenDescendantsByFilter || 0) === 0 && (node.hiddenDescendantsByLimit || 0) === 0) parts.push('これ以上の子や子孫はありません');
+        return parts.join(' / ');
+      }
+
+      function focusNode() {
+        const raw = els.focusNodeInput.value.trim();
+        if (!raw || !state.currentTree) return;
+        let node = null;
+        if (/^\d+$/.test(raw)) {
+          node = state.currentTree.nodes.find(item => String(item.id) === raw) || state.currentTree.nodes.find(item => String(item.pid) === raw);
+        } else {
+          node = state.currentTree.nodes.find(item => (item.labels || []).join(' ').toLowerCase().includes(raw.toLowerCase()));
+        }
+        if (!node) return;
+        centerOnNode(node.id);
+      }
+
+      function centerOnNode(nodeId) {
+        const node = state.currentTree && state.currentTree.nodes.find(item => item.id === nodeId);
+        if (!node) return;
+        const targetX = node.layoutX + BOX_WIDTH / 2;
+        const targetY = node.layoutY + BOX_HEIGHT / 2;
+        state.transform.x = canvas.clientWidth / 2 - targetX * state.transform.scale;
+        state.transform.y = canvas.clientHeight / 2 - targetY * state.transform.scale;
+        selectNode(nodeId, { autoOpenOnChange: true });
+      }
+
+      function updateCanvasBadge() {
+        const nodeCount = state.currentTree && state.currentTree.nodes ? state.currentTree.nodes.length : 0;
+        const scalePct = Math.round((state.transform.scale || 1) * 100);
+        const filterFlag = state.currentTree && state.currentTree.filtered ? ' / 検索関連のみ' : '';
+        const limitText = ` / limit ${formatNumber(clamp(Number(els.maxNodesInput.value || '5000'), 100, 20000))}`;
+        const truncated = state.currentTree && state.currentTree.truncated
+          ? ` / 上限で ${formatNumber(state.currentTree.omittedByLimitCount || 0)} ノード省略`
+          : '';
+        els.canvasBadge.textContent = `${formatNumber(nodeCount)} nodes / ${scalePct}%${limitText}${filterFlag}${truncated}`;
+      }
+
+      function syncViewerLayoutHeight() {
+        if (!els.viewerLayout) return;
+        const rect = els.viewerLayout.getBoundingClientRect();
+        const top = Math.max(0, Math.floor(rect.top));
+        const available = Math.max(180, Math.floor(window.innerHeight - top - 12));
+        els.viewerLayout.style.height = `${available}px`;
+        document.documentElement.style.setProperty('--viewer-top-offset', `${top}px`);
+      }
+
+      function resizeCanvas() {
+        const rect = els.viewer.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      }
+
+      function setStatus(text, progress) {
+        els.statusText.textContent = text;
+        els.progressBar.style.width = `${Math.round((progress || 0) * 100)}%`;
+      }
+
+      function createCsvParserState(delimiter) {
+        return { delimiter, inQuotes: false, field: '', row: [] };
+      }
+
+      function parseCsvChunk(text, state, onRow, maxRows) {
+        let rowsEmitted = 0;
+        for (let i = 0; i < text.length; i += 1) {
+          const ch = text[i];
+          if (state.inQuotes) {
+            if (ch === '"') {
+              if (text[i + 1] === '"') {
+                state.field += '"';
+                i += 1;
+              } else {
+                state.inQuotes = false;
+              }
+            } else {
+              state.field += ch;
+            }
+            continue;
+          }
+          if (ch === '"') {
+            state.inQuotes = true;
+          } else if (ch === state.delimiter) {
+            state.row.push(state.field);
+            state.field = '';
+          } else if (ch === '\n') {
+            state.row.push(state.field);
+            state.field = '';
+            onRow(state.row);
+            rowsEmitted += 1;
+            state.row = [];
+            if (maxRows && rowsEmitted >= maxRows) return;
+          } else if (ch === '\r') {
+            if (text[i + 1] === '\n') continue;
+            state.row.push(state.field);
+            state.field = '';
+            onRow(state.row);
+            rowsEmitted += 1;
+            state.row = [];
+            if (maxRows && rowsEmitted >= maxRows) return;
+          } else {
+            state.field += ch;
+          }
+        }
+      }
+
+      function finalizeCsvParser(state, onRow) {
+        if (state.inQuotes) return;
+        if (state.field.length || state.row.length) {
+          state.row.push(state.field);
+          onRow(state.row);
+          state.field = '';
+          state.row = [];
+        }
+      }
+
+      function detectDelimiter(text) {
+        const candidates = [',', '\t', ';', '|'];
+        let best = ',';
+        let bestScore = -Infinity;
+        candidates.forEach((candidate) => {
+          const lines = text.split(/\r?\n/).slice(0, 6).filter(Boolean);
+          let score = 0;
+          lines.forEach((line) => {
+            let inQuotes = false;
+            let count = 0;
+            for (let i = 0; i < line.length; i += 1) {
+              const ch = line[i];
+              if (ch === '"') {
+                if (line[i + 1] === '"') {
+                  i += 1;
+                } else {
+                  inQuotes = !inQuotes;
+                }
+              } else if (!inQuotes && ch === candidate) {
+                count += 1;
+              }
+            }
+            score += count;
+          });
+          if (score > bestScore) {
+            best = candidate;
+            bestScore = score;
+          }
+        });
+        return best;
+      }
+
+      function uniquifyColumns(headerRow, columnCount) {
+        const used = new Map();
+        const cols = [];
+        for (let i = 0; i < columnCount; i += 1) {
+          let name = String(headerRow[i] || '').trim();
+          if (!name) name = `column_${i + 1}`;
+          const count = used.get(name) || 0;
+          used.set(name, count + 1);
+          if (count > 0) name = `${name}_${count + 1}`;
+          cols.push(name);
+        }
+        return cols;
+      }
+
+      function makeSyntheticColumns(columnCount) {
+        return Array.from({ length: columnCount }, (_, i) => `column_${i + 1}`);
+      }
+
+      function setIfFound(select, index) {
+        if (index >= 0) select.value = String(index);
+      }
+
+      function findColumnIndex(lowerColumns, candidates) {
+        for (const candidate of candidates) {
+          const idx = lowerColumns.findIndex(name => name === candidate || name.replace(/[_\s]+/g, '') === candidate.replace(/[_\s]+/g, ''));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      }
+
+      function parseOptionalSelect(value) {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 0 ? n : -1;
+      }
+
+      function normalizeTokenList(text) {
+        return String(text || '')
+          .split(/[\n,;]+/)
+          .map(v => v.trim().toLowerCase())
+          .filter(Boolean);
+      }
+
+      function decodeDelimiter(value) {
+        if (value === '\\t' || value === '\t') return '\t';
+        if (value === 'auto' || !value) return ',';
+        return value;
+      }
+
+      function displayDelimiter(value) {
+        if (value === '\t') return 'TAB';
+        return value;
+      }
+
+      function appendChip(parent, text) {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = text;
+        parent.appendChild(chip);
+      }
+
+      function formatNumber(value) {
+        return new Intl.NumberFormat('ja-JP').format(Number(value || 0));
+      }
+
+      function formatBytes(bytes) {
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let value = Number(bytes || 0);
+        let unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+          value /= 1024;
+          unitIndex += 1;
+        }
+        return `${value.toFixed(value >= 100 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function escapeHtml(text) {
+        return String(text || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function shorten(text, maxLen) {
+        const value = String(text || '');
+        if (value.length <= maxLen) return value;
+        return value.slice(0, maxLen - 1) + '…';
+      }
+
+      function roundRect(context, x, y, w, h, r) {
+        context.beginPath();
+        context.moveTo(x + r, y);
+        context.arcTo(x + w, y, x + w, y + h, r);
+        context.arcTo(x + w, y + h, x, y + h, r);
+        context.arcTo(x, y + h, x, y, r);
+        context.arcTo(x, y, x + w, y, r);
+        context.closePath();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

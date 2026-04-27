@@ -687,7 +687,7 @@
   </style>
 </head>
 <body>
-  <!-- build: 2026-04-27-related-events-fix-v4 -->
+  <!-- build: 2026-04-25-ui-pane-resize-v3 -->
   <div id="sidebarResizer" class="pane-resizer pane-resizer-left" role="separator" aria-orientation="vertical" aria-label="設定ペイン幅を変更"></div>
   <div class="app">
     <aside class="sidebar">
@@ -751,11 +751,11 @@
       <section class="section" data-collapsible-section>
         <div class="section-title"><h2>2. フィールド指定</h2><button class="ghost collapsible-toggle" type="button" data-collapse-label-open="畳む" data-collapse-label-closed="開く">畳む</button></div>
         <div class="collapsible-content">
-        <div class="section-desc">Microsoft Defender系の列構成を想定しています。<strong>ProcessID / InitiatingProcessID / InitiatingProcessParentID</strong> の3列は必須です。親子関係の解決では、まず各行に含まれる作成時刻列を優先し、無ければイベント時刻＋ログ順で近似します。</div>
+        <div class="section-desc">Microsoft Defender系の列構成を想定しています。<strong>ProcessID / InitiatingProcessID</strong> は必須です。<strong>Process Creation Time / Initiating Process Creation Time</strong> を指定すると、プロセス作成イベントを1ノードとして安定して紐付けできます。親子関係は作成イベントを基準に解決し、親が見つからない場合は推定親ノードで補完します。</div>
         <div class="grid-3">
           <div class="field"><label for="processIdField">ProcessID列 *</label><select id="processIdField"></select></div>
           <div class="field"><label for="initiatingProcessIdField">InitiatingProcessID列 *</label><select id="initiatingProcessIdField"></select></div>
-          <div class="field"><label for="initiatingProcessParentIdField">InitiatingProcessParentID列 *</label><select id="initiatingProcessParentIdField"></select></div>
+          <div class="field"><label for="initiatingProcessParentIdField">InitiatingProcessParentID列（任意）</label><select id="initiatingProcessParentIdField"></select></div>
           <div class="field"><label for="eventTimeField">イベント時刻列</label><select id="eventTimeField"></select></div>
           <div class="field"><label for="processCreationTimeField">Process Creation Time列</label><select id="processCreationTimeField"></select></div>
           <div class="field"><label for="initiatingProcessCreationTimeField">Initiating Process Creation Time列</label><select id="initiatingProcessCreationTimeField"></select></div>
@@ -866,7 +866,7 @@ terminate
       <section class="section" data-collapsible-section>
         <div class="section-title"><h2>5. ルート選択 / 表示フィルタ / 検索</h2><button class="ghost collapsible-toggle" type="button" data-collapse-label-open="畳む" data-collapse-label-closed="開く">畳む</button></div>
         <div class="collapsible-content">
-        <div class="section-desc">再起動などでルートが複数ある場合は「全ルート」を選ぶと複数のツリーをまとめて表示できます。表示フィルタは<strong>一致ノード + その祖先 + その子孫</strong>だけを残し、兄弟や無関係の枝を隠します。表示時刻フィルタは<strong>表示タイムゾーンの時刻</strong>で入力し、ノードと関連イベントが保持するイベント時刻に対して判定します。</div>
+        <div class="section-desc">再起動などでルートが複数ある場合は「全ルート」を選ぶと複数のツリーをまとめて表示できます。表示フィルタは<strong>一致ノード + その祖先 + その子孫</strong>だけを残し、兄弟や無関係の枝を隠します。一致したノードは色とバッジで強調表示します。表示時刻フィルタは<strong>表示タイムゾーンの時刻</strong>で入力し、ノードと関連イベントが保持するイベント時刻に対して判定します。</div>
         <div class="field">
           <label for="rootSelect">ルート候補</label>
           <select id="rootSelect"><option value="__ALL__">全ルート（最大ノード数で制限）</option></select>
@@ -1025,6 +1025,7 @@ finance"></textarea>
     totalRows: 0,
     searchIndex: [],
     inferredParentMap: new Map(),
+    pendingRelatedEvents: new Map(),
     eventSeq: 0
   };
 
@@ -1043,10 +1044,10 @@ finance"></textarea>
         postMessage({ type: 'search-results', results });
       } else if (type === 'node-detail') {
         const node = appState.nodeById.get(event.data.nodeId);
-        postMessage({ type: 'node-detail', requestToken: event.data.requestToken || 0, node: node ? serializeNodeDetail(node) : null });
+        postMessage({ type: 'node-detail', node: node ? serializeNodeDetail(node) : null });
       } else if (type === 'node-events') {
         const payload = listNodeEvents(event.data.nodeId, event.data.renderOptions || null);
-        postMessage({ type: 'node-events', requestToken: event.data.requestToken || 0, ...payload });
+        postMessage({ type: 'node-events', ...payload });
       } else if (type === 'dispose') {
         clearState();
       }
@@ -1072,6 +1073,7 @@ finance"></textarea>
     appState.totalRows = 0;
     appState.searchIndex = [];
     appState.inferredParentMap = new Map();
+    appState.pendingRelatedEvents = new Map();
     appState.eventSeq = 0;
   }
 
@@ -1262,141 +1264,256 @@ finance"></textarea>
     const processIdRaw = config.processIdFieldIndex != null && config.processIdFieldIndex >= 0 ? trimValue(safeGet(row, config.processIdFieldIndex)) : '';
     const initiatingProcessIdRaw = config.initiatingProcessIdFieldIndex != null && config.initiatingProcessIdFieldIndex >= 0 ? trimValue(safeGet(row, config.initiatingProcessIdFieldIndex)) : '';
     const initiatingProcessParentIdRaw = config.initiatingProcessParentIdFieldIndex != null && config.initiatingProcessParentIdFieldIndex >= 0 ? trimValue(safeGet(row, config.initiatingProcessParentIdFieldIndex)) : '';
-    const hasProcessId = !!normalizePid(processIdRaw);
-    const pid = normalizePid(hasProcessId ? processIdRaw : initiatingProcessIdRaw);
-    if (!pid) return;
-
-    const ppid = normalizePid(hasProcessId ? initiatingProcessIdRaw : initiatingProcessParentIdRaw);
     const scope = config.scopeFieldIndex != null && config.scopeFieldIndex >= 0 ? trimValue(safeGet(row, config.scopeFieldIndex)) : '';
     const eventTimeRaw = config.eventTimeFieldIndex != null && config.eventTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.eventTimeFieldIndex)) : '';
-    const currentStartRaw = hasProcessId
-      ? (config.processCreationTimeFieldIndex != null && config.processCreationTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.processCreationTimeFieldIndex)) : '')
-      : (config.initiatingProcessCreationTimeFieldIndex != null && config.initiatingProcessCreationTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.initiatingProcessCreationTimeFieldIndex)) : '');
-    const parentStartRaw = hasProcessId
-      ? (config.initiatingProcessCreationTimeFieldIndex != null && config.initiatingProcessCreationTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.initiatingProcessCreationTimeFieldIndex)) : '')
-      : (config.initiatingProcessParentCreationTimeFieldIndex != null && config.initiatingProcessParentCreationTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.initiatingProcessParentCreationTimeFieldIndex)) : '');
+    const currentStartRaw = config.processCreationTimeFieldIndex != null && config.processCreationTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.processCreationTimeFieldIndex)) : '';
+    const parentStartRaw = config.initiatingProcessCreationTimeFieldIndex != null && config.initiatingProcessCreationTimeFieldIndex >= 0 ? trimValue(safeGet(row, config.initiatingProcessCreationTimeFieldIndex)) : '';
     const eventTypeRaw = config.eventTypeFieldIndex != null && config.eventTypeFieldIndex >= 0 ? trimValue(safeGet(row, config.eventTypeFieldIndex)) : '';
 
+    const pid = normalizePid(processIdRaw);
+    const initiatingPid = normalizePid(initiatingProcessIdRaw);
+    const fallbackParentPid = normalizePid(initiatingProcessParentIdRaw);
     const eventTimeMs = parseTimestamp(eventTimeRaw, config.sourceTimeZone);
-    appState.stats.rows += 1;
-
     const currentStartMs = parseTimestamp(currentStartRaw, config.sourceTimeZone);
     const parentStartMs = parseTimestamp(parentStartRaw, config.sourceTimeZone);
-    const isDeclaredCreateEvent = matchesEventType(eventTypeRaw, config.createValues || []);
-    const isCreateAnchor = isDeclaredCreateEvent;
-    const suppressRelatedEvent = isDeclaredCreateEvent || (!eventTypeRaw && hasProcessId && !!currentStartRaw);
-    const isEnd = matchesEventType(eventTypeRaw, config.endValues || []);
-
     const rowDisplay = collectDisplayValues(row, config.displayFields || []);
-    const pidKey = scope + '' + pid;
+    const isCreate = isProcessCreateEvent(eventTypeRaw, config, processIdRaw, currentStartRaw);
+    const isEnd = matchesEventType(eventTypeRaw, (config.endValues && config.endValues.length) ? config.endValues : getDefaultEndTokens());
 
-    let node = null;
+    appState.stats.rows += 1;
 
-    if (currentStartRaw) {
-      const startKey = scope + '' + pid + '' + currentStartRaw;
-      const currentNodeId = appState.currentByPid.get(pidKey);
-      const currentNode = currentNodeId ? appState.nodeById.get(currentNodeId) : null;
-      node = appState.instanceMapByStart.get(startKey) || null;
-      if (!node && currentNode && !currentNode.startTimeRaw) {
-        node = currentNode;
+    if (isCreate) {
+      const childPid = pid || initiatingPid;
+      if (!childPid) return;
+      const parentPid = initiatingPid || fallbackParentPid;
+      const node = getOrCreateProcessNode({
+        pid: childPid,
+        ppid: parentPid,
+        scope,
+        startRaw: currentStartRaw,
+        startMs: currentStartMs,
+        rowNumber,
+        rowDisplay
+      });
+      attachCreateObservation(node, {
+        rowNumber,
+        ppid: parentPid,
+        eventTimeRaw,
+        eventTimeMs,
+        eventTypeRaw,
+        rowDisplay,
+        fullRow: row,
+        startRaw: currentStartRaw,
+        startMs: currentStartMs,
+        isEnd
+      });
+      maybeSetParentHint(node, parentStartRaw, parentStartMs, rowNumber);
+      const pending = pullPendingRelatedEvents(scope, childPid, currentStartRaw, currentStartMs);
+      for (const pendingEvent of pending) {
+        attachRelatedObservation(node, pendingEvent);
       }
-      if (!node) {
-        node = createInstance(pid, ppid, scope, rowNumber, rowDisplay);
-      }
-      node.confidence = 'exact';
-      node.anchorKind = 'start_time';
-      node.anchorRow = node.anchorRow || rowNumber;
-      node.anchorTimeMs = currentStartMs;
-      node.anchorRaw = currentStartRaw;
-      node.startTimeMs = currentStartMs;
-      node.startTimeRaw = currentStartRaw;
-      node.ppid = ppid || node.ppid;
-      maybeSetRepresentative(node, rowNumber, rowDisplay, isCreateAnchor ? 5 : 4, 'start_time', ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, row);
-      appState.instanceMapByStart.set(startKey, node);
-      appState.currentByPid.set(pidKey, node.id);
-    } else {
-      if (orderMode === 'asc') {
-        const currentId = appState.currentByPid.get(pidKey);
-        if (isCreateAnchor || !currentId) {
-          node = createInstance(pid, ppid, scope, rowNumber, rowDisplay);
-          node.confidence = isCreateAnchor ? 'create' : 'approx';
-          if (isCreateAnchor) {
-            node.anchorKind = 'create_event';
-            node.anchorRow = rowNumber;
-            node.anchorTimeMs = eventTimeMs;
-            node.anchorRaw = eventTimeRaw || '';
-            node.startTimeMs = eventTimeMs;
-            node.startTimeRaw = eventTimeRaw || '';
-            maybeSetRepresentative(node, rowNumber, rowDisplay, 3, 'create_event', ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, row);
-          } else {
-            node.anchorKind = eventTimeMs != null ? 'event_time' : 'row_order';
-            node.anchorRow = rowNumber;
-            node.anchorTimeMs = eventTimeMs;
-            node.anchorRaw = eventTimeRaw || '';
-            maybeSetRepresentative(node, rowNumber, rowDisplay, eventTimeMs != null ? 2 : 1, node.anchorKind, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, row);
-          }
-          appState.currentByPid.set(pidKey, node.id);
-        } else {
-          node = appState.nodeById.get(currentId);
-        }
-      } else {
-        const currentId = appState.currentByPid.get(pidKey);
-        if (!currentId) {
-          node = createInstance(pid, ppid, scope, rowNumber, rowDisplay);
-          node.confidence = eventTimeMs != null ? 'approx' : 'low';
-          node.anchorKind = eventTimeMs != null ? 'event_time' : 'row_order';
-          node.anchorRow = rowNumber;
-          node.anchorTimeMs = eventTimeMs;
-          node.anchorRaw = eventTimeRaw || '';
-          maybeSetRepresentative(node, rowNumber, rowDisplay, eventTimeMs != null ? 2 : 1, node.anchorKind, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, row);
-          appState.currentByPid.set(pidKey, node.id);
-        } else {
-          node = appState.nodeById.get(currentId);
-        }
-      }
+      return;
     }
 
+    const ownerPid = initiatingPid;
+    if (!ownerPid) return;
+    const relatedEvent = createRelatedEventPayload(rowNumber, eventTypeRaw, eventTimeRaw, eventTimeMs, rowDisplay, row);
+    const ownerNode = findProcessNodeByStart(scope, ownerPid, parentStartRaw, parentStartMs);
+    if (ownerNode) {
+      attachRelatedObservation(ownerNode, relatedEvent);
+    } else {
+      queuePendingRelatedEvent(scope, ownerPid, parentStartRaw, parentStartMs, relatedEvent);
+    }
+  }
+
+  function isProcessCreateEvent(eventTypeRaw, config, processIdRaw, currentStartRaw) {
+    const configuredTokens = Array.isArray(config && config.createValues) ? config.createValues : [];
+    const tokens = configuredTokens.length ? configuredTokens : getDefaultCreateTokens();
+    if (matchesEventType(eventTypeRaw, tokens)) return true;
+    if ((config.eventTypeFieldIndex == null || config.eventTypeFieldIndex < 0) && normalizePid(processIdRaw)) {
+      return !!trimValue(currentStartRaw);
+    }
+    return false;
+  }
+
+  function getDefaultCreateTokens() {
+    return ['processcreated', 'process created', 'process_create', 'process start', 'processstart', 'proc_create'];
+  }
+
+  function getDefaultEndTokens() {
+    return ['processterminated', 'process terminated', 'process_end', 'process end', 'terminate', 'terminated'];
+  }
+
+  function buildStartLookupKeys(scope, pid, startRaw, startMs) {
+    const keys = [];
+    if (!pid) return keys;
+    if (startMs != null) keys.push((scope || '') + '' + pid + 'ms:' + startMs);
+    const raw = trimValue(startRaw);
+    if (raw) keys.push((scope || '') + '' + pid + 'raw:' + raw);
+    return [...new Set(keys)];
+  }
+
+  function buildNodeIdentityKey(scope, pid, startRaw, startMs, rowNumber) {
+    const exactKeys = buildStartLookupKeys(scope, pid, startRaw, startMs);
+    if (exactKeys.length) return exactKeys[0];
+    return (scope || '') + '' + pid + 'row:' + rowNumber;
+  }
+
+  function registerNodeStartLookup(node, scope, pid, startRaw, startMs) {
+    for (const key of buildStartLookupKeys(scope, pid, startRaw, startMs)) {
+      appState.instanceMapByStart.set(key, node);
+    }
+  }
+
+  function findProcessNodeByStart(scope, pid, startRaw, startMs) {
+    const keys = buildStartLookupKeys(scope, pid, startRaw, startMs);
+    for (const key of keys) {
+      const node = appState.instanceMapByStart.get(key);
+      if (node) return node;
+    }
+    return null;
+  }
+
+  function queuePendingRelatedEvent(scope, pid, startRaw, startMs, event) {
+    const keys = buildStartLookupKeys(scope, pid, startRaw, startMs);
+    if (!keys.length || !event) return;
+    for (const key of keys) {
+      if (!appState.pendingRelatedEvents.has(key)) appState.pendingRelatedEvents.set(key, []);
+      appState.pendingRelatedEvents.get(key).push(event);
+    }
+  }
+
+  function pullPendingRelatedEvents(scope, pid, startRaw, startMs) {
+    const keys = buildStartLookupKeys(scope, pid, startRaw, startMs);
+    const seen = new Map();
+    for (const key of keys) {
+      const bucket = appState.pendingRelatedEvents.get(key) || [];
+      for (const item of bucket) {
+        if (item && item.id) seen.set(item.id, item);
+      }
+      appState.pendingRelatedEvents.delete(key);
+    }
+    return [...seen.values()].sort((a, b) => {
+      if ((a.rowNumber || 0) !== (b.rowNumber || 0)) return (a.rowNumber || 0) - (b.rowNumber || 0);
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+  }
+
+  function getOrCreateProcessNode({ pid, ppid, scope, startRaw, startMs, rowNumber, rowDisplay }) {
+    const identityKey = buildNodeIdentityKey(scope, pid, startRaw, startMs, rowNumber);
+    let node = appState.instanceMapByStart.get(identityKey) || null;
     if (!node) {
       node = createInstance(pid, ppid, scope, rowNumber, rowDisplay);
-      node.confidence = eventTimeMs != null ? 'approx' : 'low';
-      node.anchorKind = eventTimeMs != null ? 'event_time' : 'row_order';
-      node.anchorRow = rowNumber;
-      node.anchorTimeMs = eventTimeMs;
-      node.anchorRaw = eventTimeRaw || '';
-      maybeSetRepresentative(node, rowNumber, rowDisplay, eventTimeMs != null ? 2 : 1, node.anchorKind, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, row);
-      appState.currentByPid.set(pidKey, node.id);
+      node.nodeIdentityKey = identityKey;
+      appState.instanceMapByStart.set(identityKey, node);
     }
+    if (ppid && !node.ppid) node.ppid = ppid;
+    registerNodeStartLookup(node, scope, pid, startRaw, startMs);
+    return node;
+  }
 
-    attachRowToInstance(node, rowNumber, ppid, eventTimeRaw, eventTimeMs, eventTypeRaw, rowDisplay, row);
-    maybeSetParentHint(node, parentStartRaw, parentStartMs, rowNumber);
-    if (!suppressRelatedEvent) {
-      recordRelatedEvent(node, rowNumber, eventTypeRaw, eventTimeRaw, eventTimeMs, rowDisplay, row);
+  function createRelatedEventPayload(rowNumber, eventTypeRaw, eventTimeRaw, eventTimeMs, rowDisplay, fullRow) {
+    return {
+      id: 'pending:' + rowNumber,
+      nodeId: null,
+      rowNumber,
+      eventType: trimValue(eventTypeRaw),
+      eventTypeRaw: trimValue(eventTypeRaw),
+      eventTimeRaw: trimValue(eventTimeRaw),
+      eventTimeMs: eventTimeMs == null ? null : eventTimeMs,
+      displayValues: { ...(rowDisplay || {}) },
+      allValues: collectRowValues(fullRow)
+    };
+  }
+
+  function updateNodeEventWindow(node, rowNumber, eventTimeRaw, eventTimeMs) {
+    node.firstRow = Math.min(node.firstRow, rowNumber);
+    node.lastRow = Math.max(node.lastRow, rowNumber);
+    if (eventTimeMs != null) {
+      node.eventTimes.push(eventTimeMs);
+      if (node.earliestTimeMs == null || eventTimeMs < node.earliestTimeMs) {
+        node.earliestTimeMs = eventTimeMs;
+        node.earliestTimeRaw = eventTimeRaw || '';
+      }
+      if (node.latestTimeMs == null || eventTimeMs > node.latestTimeMs) {
+        node.latestTimeMs = eventTimeMs;
+        node.latestTimeRaw = eventTimeRaw || '';
+      }
     }
+  }
 
-    if (isCreateAnchor && !currentStartRaw) {
-      if (!node.startTimeRaw) {
-        node.startTimeRaw = eventTimeRaw || '';
-        node.startTimeMs = eventTimeMs;
-      }
-      node.anchorKind = 'create_event';
-      node.anchorRow = rowNumber;
-      node.anchorTimeMs = eventTimeMs;
-      node.anchorRaw = eventTimeRaw || '';
-      node.ppid = ppid || node.ppid;
-      node.confidence = 'create';
-      maybeSetRepresentative(node, rowNumber, rowDisplay, 3, 'create_event', ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, row);
-      if (orderMode === 'desc' && !currentStartRaw) {
-        appState.currentByPid.delete(pidKey);
-      }
+  function attachCreateObservation(node, payload) {
+    if (!node) return;
+    node.rowCount += 1;
+    if (payload.ppid && !node.ppid) node.ppid = payload.ppid;
+    if (payload.eventTypeRaw && !node.firstEventType) node.firstEventType = payload.eventTypeRaw;
+    node.anchorKind = payload.startRaw ? 'start_time' : 'create_event';
+    node.anchorRow = payload.rowNumber;
+    node.anchorTimeMs = payload.startMs != null ? payload.startMs : payload.eventTimeMs;
+    node.anchorRaw = payload.startRaw || payload.eventTimeRaw || '';
+    node.startTimeMs = payload.startMs;
+    node.startTimeRaw = payload.startRaw || '';
+    node.confidence = payload.startRaw ? 'exact' : 'create';
+    appendSearchText(node, [node.pid, node.ppid, node.scope, payload.eventTypeRaw, payload.eventTimeRaw, ...Object.values(payload.rowDisplay || {})]);
+    maybeSetRepresentative(node, payload.rowNumber, payload.rowDisplay, payload.startRaw ? 5 : 4, node.anchorKind, payload.ppid, node.scope, payload.eventTimeRaw, payload.eventTimeMs, payload.eventTypeRaw, payload.fullRow);
+    if (payload.eventTimeMs != null) {
+      updateNodeEventWindow(node, payload.rowNumber, payload.eventTimeRaw, payload.eventTimeMs);
+    } else if (payload.startMs != null) {
+      updateNodeEventWindow(node, payload.rowNumber, payload.startRaw || payload.eventTimeRaw || '', payload.startMs);
+    } else {
+      node.firstRow = Math.min(node.firstRow, payload.rowNumber);
+      node.lastRow = Math.max(node.lastRow, payload.rowNumber);
     }
+    if (payload.isEnd) {
+      node.endRow = payload.rowNumber;
+      node.endTimeMs = payload.eventTimeMs;
+      node.endTimeRaw = payload.eventTimeRaw || '';
+    }
+  }
 
-    if (isEnd) {
-      node.endRow = rowNumber;
-      node.endTimeMs = eventTimeMs;
-      node.endTimeRaw = eventTimeRaw || '';
-      if (orderMode === 'asc' && !currentStartRaw) {
-        appState.currentByPid.delete(pidKey);
-      }
+  function attachRelatedObservation(node, relatedEvent) {
+    if (!node || !relatedEvent) return;
+    node.rowCount += 1;
+    updateNodeEventWindow(node, relatedEvent.rowNumber, relatedEvent.eventTimeRaw, relatedEvent.eventTimeMs);
+    recordRelatedEvent(node, relatedEvent.rowNumber, relatedEvent.eventTypeRaw, relatedEvent.eventTimeRaw, relatedEvent.eventTimeMs, relatedEvent.displayValues, relatedEvent.allValues);
+  }
+
+  function recordRelatedEvent(node, rowNumber, eventTypeRaw, eventTimeRaw, eventTimeMs, rowDisplay, fullRowOrValues) {
+    if (!node || node.isSyntheticParent) return;
+    node.relatedEventsTotal += 1;
+    if (node.relatedEvents.length >= MAX_RELATED_EVENTS_PER_NODE) {
+      node.relatedEventsDropped += 1;
+      return;
+    }
+    const allValues = Array.isArray(fullRowOrValues)
+      ? collectRowValues(fullRowOrValues)
+      : { ...(fullRowOrValues || {}) };
+    node.relatedEvents.push({
+      id: `${node.id}:${rowNumber}`,
+      nodeId: node.id,
+      rowNumber,
+      eventType: trimValue(eventTypeRaw),
+      eventTypeRaw: trimValue(eventTypeRaw),
+      eventTimeRaw: trimValue(eventTimeRaw),
+      eventTimeMs: eventTimeMs == null ? null : eventTimeMs,
+      displayValues: { ...(rowDisplay || {}) },
+      allValues
+    });
+    node.relatedEventCount = node.relatedEvents.length;
+  }
+
+  function maybeSetRepresentative(node, rowNumber, rowDisplay, priority, reason, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, fullRow) {
+    if (priority > node.representativePriority || (priority === node.representativePriority && rowNumber < node.representativeRow)) {
+      node.representativePriority = priority;
+      node.representativeRow = rowNumber;
+      node.representativeValues = { ...rowDisplay };
+      node.representativeAllValues = Array.isArray(fullRow) ? collectRowValues(fullRow) : { ...(fullRow || {}) };
+      node.representativeEventType = eventTypeRaw || '';
+      node.representativeEventTimeRaw = eventTimeRaw || '';
+      node.representativeEventTimeMs = eventTimeMs;
+      if (ppid) node.ppid = ppid;
+      if (scope) node.scope = scope;
+      if (reason && !node.anchorKind) node.anchorKind = reason;
     }
   }
 
@@ -1449,6 +1566,7 @@ finance"></textarea>
       relatedEvents: [],
       relatedEventsTotal: 0,
       relatedEventsDropped: 0,
+      relatedEventCount: 0,
       isSyntheticParent: false,
       inferred: false,
       syntheticKind: '',
@@ -1456,74 +1574,12 @@ finance"></textarea>
       syntheticContext: null,
       parentResolvedByInference: false,
       parentEstimateReason: '',
-      parentEstimateKey: ''
+      parentEstimateKey: '',
+      nodeIdentityKey: ''
     };
     appState.instances.push(node);
     appState.nodeById.set(node.id, node);
     return node;
-  }
-
-  function attachRowToInstance(node, rowNumber, ppid, eventTimeRaw, eventTimeMs, eventTypeRaw, rowDisplay, fullRow) {
-    node.rowCount += 1;
-    node.firstRow = Math.min(node.firstRow, rowNumber);
-    node.lastRow = Math.max(node.lastRow, rowNumber);
-    if (ppid && !node.ppid) node.ppid = ppid;
-    if (eventTypeRaw && !node.firstEventType) node.firstEventType = eventTypeRaw;
-    appendSearchText(node, [node.pid, node.ppid, node.scope, eventTypeRaw, eventTimeRaw, ...Object.values(rowDisplay || {})]);
-
-    if (eventTimeMs != null) {
-      node.eventTimes.push(eventTimeMs);
-      if (node.earliestTimeMs == null || eventTimeMs < node.earliestTimeMs) {
-        node.earliestTimeMs = eventTimeMs;
-        node.earliestTimeRaw = eventTimeRaw || '';
-      }
-      if (node.latestTimeMs == null || eventTimeMs > node.latestTimeMs) {
-        node.latestTimeMs = eventTimeMs;
-        node.latestTimeRaw = eventTimeRaw || '';
-      }
-      if ((node.anchorTimeMs == null || node.anchorKind === 'event_time') && node.representativePriority < 2) {
-        maybeSetRepresentative(node, rowNumber, rowDisplay, 2, 'event_time', ppid, node.scope, eventTimeRaw, eventTimeMs, eventTypeRaw, fullRow);
-      }
-    } else if (node.representativePriority < 1) {
-      maybeSetRepresentative(node, rowNumber, rowDisplay, 1, 'row_order', ppid, node.scope, eventTimeRaw, eventTimeMs, eventTypeRaw, fullRow);
-    }
-  }
-
-
-  function recordRelatedEvent(node, rowNumber, eventTypeRaw, eventTimeRaw, eventTimeMs, rowDisplay, fullRow) {
-    if (!node || node.isSyntheticParent) return;
-    node.relatedEventsTotal += 1;
-    if (node.relatedEvents.length >= MAX_RELATED_EVENTS_PER_NODE) {
-      node.relatedEventsDropped += 1;
-      return;
-    }
-    node.relatedEvents.push({
-      id: `${node.id}:${rowNumber}`,
-      nodeId: node.id,
-      rowNumber,
-      eventType: trimValue(eventTypeRaw),
-      eventTypeRaw: trimValue(eventTypeRaw),
-      eventTimeRaw: trimValue(eventTimeRaw),
-      eventTimeMs: eventTimeMs == null ? null : eventTimeMs,
-      displayValues: { ...(rowDisplay || {}) },
-      allValues: collectRowValues(fullRow)
-    });
-    node.relatedEventCount = node.relatedEvents.length;
-  }
-
-  function maybeSetRepresentative(node, rowNumber, rowDisplay, priority, reason, ppid, scope, eventTimeRaw, eventTimeMs, eventTypeRaw, fullRow) {
-    if (priority > node.representativePriority || (priority === node.representativePriority && rowNumber < node.representativeRow)) {
-      node.representativePriority = priority;
-      node.representativeRow = rowNumber;
-      node.representativeValues = { ...rowDisplay };
-      node.representativeAllValues = collectRowValues(fullRow);
-      node.representativeEventType = eventTypeRaw || '';
-      node.representativeEventTimeRaw = eventTimeRaw || '';
-      node.representativeEventTimeMs = eventTimeMs;
-      if (ppid) node.ppid = ppid;
-      if (scope) node.scope = scope;
-      if (reason && !node.anchorKind) node.anchorKind = reason;
-    }
   }
 
   function collectRowValues(row) {
@@ -1601,9 +1657,7 @@ finance"></textarea>
     const observedNodes = [...appState.instances];
     for (const node of observedNodes) {
       const parentPid = node.ppid;
-      if (!parentPid) {
-        appState.stats.unresolvedParents += 1;
-        node.unresolvedParent = true;
+      if (!parentPid || parentPid === '0') {
         continue;
       }
       const candidates = pidGroups.get((node.scope || '') + '' + parentPid) || [];
@@ -1904,14 +1958,19 @@ finance"></textarea>
     const scopeSet = new Set(scopeIds);
     const activeFilter = options.hasTimeFilter || options.hasTextFilter;
     const matchedSet = new Set();
+    const matchedMeta = new Map();
     const visibleSet = activeFilter ? new Set() : scopeSet;
 
     if (activeFilter) {
       for (const nodeId of scopeIds) {
         const node = appState.nodeById.get(nodeId);
         if (!node) continue;
-        if (nodeMatchesRenderFilters(node, options)) {
+        const matchedByText = options.hasTextFilter ? matchesKeywordFilter(node.searchText || '', options.keywords, options.filterMode) : false;
+        const matchedByTime = options.hasTimeFilter ? nodeIntersectsEventTimeRange(node, options.eventTimeFromMs, options.eventTimeToMs) : false;
+        const matched = (!options.hasTextFilter || matchedByText) && (!options.hasTimeFilter || matchedByTime);
+        if (matched) {
           matchedSet.add(nodeId);
+          matchedMeta.set(nodeId, { matchedByText, matchedByTime });
           addAncestorsToSet(nodeId, visibleSet, scopeSet);
           addDescendantsToSet(nodeId, visibleSet, scopeSet);
         }
@@ -1945,9 +2004,13 @@ finance"></textarea>
       const node = appState.nodeById.get(current.id);
       if (!node) continue;
       const visibleChildren = (node.children || []).filter(childId => visibleSet.has(childId));
+      const matchInfo = matchedMeta.get(node.id) || { matchedByText: false, matchedByTime: false };
       nodes.push(serializeNodeForRender(node, current.parentId, {
         hiddenChildCount: Math.max(0, (node.children || []).length - visibleChildren.length),
-        limitTruncatedChildren: false
+        limitTruncatedChildren: false,
+        matched: matchedSet.has(node.id),
+        matchedByText: matchInfo.matchedByText,
+        matchedByTime: matchInfo.matchedByTime
       }));
       const childOrder = useDepthFirst ? [...visibleChildren].reverse() : visibleChildren;
       for (const childId of childOrder) {
@@ -2133,8 +2196,7 @@ finance"></textarea>
       id: event.id,
       nodeId: event.nodeId,
       rowNumber: event.rowNumber,
-      eventType: event.eventTypeRaw || event.eventType || '',
-      eventTypeRaw: event.eventTypeRaw || event.eventType || '',
+      eventTypeRaw: event.eventTypeRaw,
       eventTimeRaw: event.eventTimeRaw,
       eventTimeMs: event.eventTimeMs,
       snippet: buildEventSnippet(event),
@@ -2186,7 +2248,10 @@ finance"></textarea>
       relatedEventCount: node.relatedEventsTotal || 0,
       relatedEventDroppedCount: node.relatedEventsDropped || 0,
       hiddenChildCount: opts.hiddenChildCount || 0,
-      limitTruncatedChildren: !!opts.limitTruncatedChildren
+      limitTruncatedChildren: !!opts.limitTruncatedChildren,
+      matched: !!opts.matched,
+      matchedByText: !!opts.matchedByText,
+      matchedByTime: !!opts.matchedByTime
     };
   }
 
@@ -2214,6 +2279,9 @@ finance"></textarea>
       anchorRaw: node.anchorRaw,
       anchorTimeMs: node.anchorTimeMs,
       anchorRow: node.anchorRow,
+      firstRow: node.firstRow,
+      lastRow: node.lastRow,
+      representativeRow: node.representativeRow,
       rowCount: node.rowCount,
       subtreeSize: node.subtreeSize || 1,
       parentId: node.parentId,
@@ -2283,8 +2351,7 @@ finance"></textarea>
       return {
         id: item.id || `${node.id}:${idx}`,
         rowNumber: item.rowNumber,
-        eventType: item.eventTypeRaw || item.eventType || '',
-        eventTypeRaw: item.eventTypeRaw || item.eventType || '',
+        eventType: item.eventType || '',
         eventTimeRaw: item.eventTimeRaw || '',
         eventTimeMs: item.eventTimeMs,
         summary: buildRelatedEventSummaryText(item),
@@ -2300,7 +2367,11 @@ finance"></textarea>
 
   function buildRelatedEventSummaryText(item) {
     const parts = [];
-    if (item.eventTypeRaw || item.eventType) parts.push(item.eventTypeRaw || item.eventType);
+    if (item.eventType) parts.push(item.eventType);
+    for (const fieldIndex of appState.labelFields || []) {
+      const value = item && item.displayValues ? trimValue(item.displayValues[fieldIndex]) : '';
+      if (value) parts.push(value);
+    }
     if (item.eventTimeRaw) parts.push(item.eventTimeRaw);
     if (item.rowNumber) parts.push(`row ${item.rowNumber}`);
     return parts.join(' / ');
@@ -2359,14 +2430,10 @@ finance"></textarea>
     return result;
   }
 
-  function normalizeEventTypeToken(value) {
-    return trimValue(value).toLowerCase().replace(/[\s_-]+/g, '');
-  }
-
   function matchesEventType(rawValue, tokens) {
-    const value = normalizeEventTypeToken(rawValue);
+    const value = trimValue(rawValue).toLowerCase();
     if (!value || !tokens || !tokens.length) return false;
-    return tokens.some(token => normalizeEventTypeToken(token) === value);
+    return tokens.some(token => token && value.includes(token));
   }
 
   function parseTimestamp(value, timeZoneConfig) {
@@ -2558,9 +2625,6 @@ finance"></textarea>
         currentTree: null,
         selectedNodeId: null,
         selectedNodeDetail: null,
-        selectedNodeEventsPayload: null,
-        selectedNodeEvents: [],
-        selectedNodeEventsLoading: false,
         selectedEventId: null,
         selectedEventDetail: null,
         transform: { x: 40, y: 40, scale: 1 },
@@ -2576,8 +2640,7 @@ finance"></textarea>
         sidebarWidth: 470,
         detailsWidth: 340,
         paneResize: null,
-        paneRefreshScheduled: false,
-        selectedNodeRequestToken: 0
+        paneRefreshScheduled: false
       };
 
       const els = {
@@ -3166,7 +3229,7 @@ finance"></textarea>
         const initiatingProcessIdFieldIndex = Number(els.initiatingProcessIdField.value);
         const initiatingProcessParentIdFieldIndex = Number(els.initiatingProcessParentIdField.value);
         if (processIdFieldIndex < 0 || initiatingProcessIdFieldIndex < 0 || initiatingProcessParentIdFieldIndex < 0) {
-          throw new Error('ProcessID / InitiatingProcessID / InitiatingProcessParentID の3列は必須です。');
+          throw new Error('ProcessID / InitiatingProcessID の2列は必須です。');
         }
         return {
           hasHeader: els.hasHeader.checked,
@@ -3213,21 +3276,6 @@ finance"></textarea>
           filterKeywords: keywords,
           filterMode: els.filterMode.value === 'and' ? 'and' : 'or'
         };
-      }
-
-      function buildRenderOptionsSafe() {
-        try {
-          return buildRenderOptions();
-        } catch (error) {
-          return {
-            eventTimeFromRaw: '',
-            eventTimeToRaw: '',
-            eventTimeFromMs: null,
-            eventTimeToMs: null,
-            filterKeywords: normalizeTokenList(els.filterKeywords.value),
-            filterMode: els.filterMode.value === 'and' ? 'and' : 'or'
-          };
-        }
       }
 
 
@@ -3302,42 +3350,12 @@ finance"></textarea>
           } else if (msg.type === 'search-results') {
             renderSearchResults(msg.results || []);
           } else if (msg.type === 'node-detail') {
-            if (msg.requestToken && msg.requestToken !== state.selectedNodeRequestToken) return;
-            if (msg.node && state.selectedNodeId != null && Number(msg.node.id) !== Number(state.selectedNodeId)) return;
             const treeNode = state.currentTree && state.currentTree.nodes ? state.currentTree.nodes.find(item => item.id === (msg.node && msg.node.id)) : null;
             const truncatedParents = state.currentTree && Array.isArray(state.currentTree.truncatedParents) ? state.currentTree.truncatedParents : [];
             state.selectedNodeDetail = msg.node && treeNode ? { ...msg.node, hiddenChildCount: treeNode.hiddenChildCount || 0, limitTruncatedChildren: truncatedParents.includes(msg.node.id) } : msg.node;
-            if (msg.node && Array.isArray(msg.node.relatedEvents) && (!Array.isArray(state.selectedNodeEvents) || !state.selectedNodeEvents.length)) {
-              state.selectedNodeEvents = msg.node.relatedEvents;
-            }
             state.selectedEventId = null;
             state.selectedEventDetail = null;
             renderNodeDetail(state.selectedNodeDetail);
-            if (getVisibleRelatedEvents(state.selectedNodeDetail).length) {
-              revealRelatedEventsPanel();
-              ensureSelectedRelatedEventsVisible();
-            }
-            redraw();
-          } else if (msg.type === 'node-events') {
-            if (msg.requestToken && msg.requestToken !== state.selectedNodeRequestToken) return;
-            if (Number(msg.nodeId) !== Number(state.selectedNodeId)) return;
-            state.selectedNodeEventsLoading = false;
-            const incomingEvents = Array.isArray(msg.events) ? msg.events : [];
-            const fallbackEvents = state.selectedNodeDetail && Array.isArray(state.selectedNodeDetail.relatedEvents) ? state.selectedNodeDetail.relatedEvents : [];
-            const shouldKeepFallback = !hasActiveEventTimeFilter() && !incomingEvents.length && fallbackEvents.length > 0;
-            state.selectedNodeEventsPayload = shouldKeepFallback ? null : msg;
-            state.selectedNodeEvents = shouldKeepFallback ? fallbackEvents : incomingEvents;
-            if (state.selectedEventId) {
-              const selected = Array.isArray(state.selectedNodeEvents) ? (state.selectedNodeEvents.find(item => item.id === state.selectedEventId) || null) : null;
-              state.selectedEventDetail = selected;
-              if (!selected) state.selectedEventId = null;
-            }
-            renderRelatedEvents(state.selectedNodeDetail);
-            renderSelectedEventDetail(state.selectedEventDetail);
-            if (getVisibleRelatedEvents(state.selectedNodeDetail).length) {
-              revealRelatedEventsPanel();
-              ensureSelectedRelatedEventsVisible();
-            }
             redraw();
           } else if (msg.type === 'error') {
             setStatus(`エラー: ${msg.message}`, 1);
@@ -3397,8 +3415,6 @@ finance"></textarea>
         els.metricOrder.textContent = summary.resolvedOrder === 'desc' ? '新→古' : '古→新';
         els.metricUnresolved.textContent = formatNumber(summary.unresolvedParents);
         els.metricWarnings.textContent = formatNumber(warnings.length || 0);
-        state.selectedNodeEventsPayload = null;
-        state.selectedNodeEvents = [];
         renderWarnings(warnings);
         renderViewerMeta();
         renderNodeDetail(null);
@@ -3527,10 +3543,7 @@ finance"></textarea>
         state.selectedNodeId = keepSelected || null;
         if (!state.selectedNodeId) {
           state.selectedNodeDetail = null;
-          state.selectedNodeEventsPayload = null;
-          state.selectedNodeEvents = [];
-        state.selectedNodeEventsLoading = false;
-        state.selectedEventId = null;
+          state.selectedEventId = null;
           state.selectedEventDetail = null;
           renderNodeDetail(null);
         } else {
@@ -3607,12 +3620,13 @@ finance"></textarea>
           inferred: { fill: 'rgba(98, 76, 156, 0.88)', stroke: '#b89aff' }
         };
         const style = node.isSyntheticParent ? confidenceStyles.inferred : (confidenceStyles[node.confidence] || confidenceStyles.low);
+        const isMatched = !!node.matched;
 
         roundRect(ctx, rect.x, rect.y, rect.width, rect.height, 14);
-        ctx.fillStyle = selected ? 'rgba(255,255,255,0.1)' : style.fill;
+        ctx.fillStyle = selected ? 'rgba(255,255,255,0.1)' : (isMatched ? 'rgba(185, 137, 44, 0.92)' : style.fill);
         ctx.fill();
-        ctx.lineWidth = selected ? 3 / scale : 2 / scale;
-        ctx.strokeStyle = selected ? '#ffffff' : style.stroke;
+        ctx.lineWidth = selected ? 3 / scale : (isMatched ? 2.8 / scale : 2 / scale);
+        ctx.strokeStyle = selected ? '#ffffff' : (isMatched ? '#ffe08a' : style.stroke);
         ctx.stroke();
 
         ctx.fillStyle = 'white';
@@ -3629,6 +3643,26 @@ finance"></textarea>
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
         const footerLeft = node.isSyntheticParent ? `#${node.id} / 推定親` : `#${node.id} / subtree ${node.subtreeSize}`;
         ctx.fillText(footerLeft, rect.x + 12, rect.y + rect.height - 12);
+        if (isMatched) {
+          const matchLabel = node.matchedByText && node.matchedByTime ? 'MATCH+TIME' : (node.matchedByText ? 'MATCH' : 'TIME');
+          ctx.font = `${Math.max(9, 10 * textScale) / scale}px system-ui, sans-serif`;
+          const badgeW = ctx.measureText(matchLabel).width + 14;
+          const badgeH = 18 / scale;
+          const badgeX = rect.x + rect.width - badgeW - 10;
+          const badgeY = rect.y + rect.height - badgeH - 10;
+          roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 9 / scale);
+          ctx.fillStyle = 'rgba(33, 27, 8, 0.92)';
+          ctx.fill();
+          ctx.strokeStyle = '#ffe08a';
+          ctx.lineWidth = 1.3 / scale;
+          ctx.stroke();
+          ctx.fillStyle = '#fff4cf';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(matchLabel, badgeX + badgeW / 2, badgeY + badgeH / 2);
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'alphabetic';
+        }
         if (node.relatedEventCount) {
           const badgeText = String(node.relatedEventCount);
           ctx.font = `${Math.max(10, 11 * textScale) / scale}px system-ui, sans-serif`;
@@ -3653,7 +3687,7 @@ finance"></textarea>
 
       function drawRelatedEventNodes(scale, textScale, nodeMap) {
         if (!els.showRelatedEventNodes.checked || !els.showRelatedEvents.checked) return;
-        if (!state.selectedNodeId) return;
+        if (!state.selectedNodeId || !state.selectedNodeDetail) return;
         const parent = nodeMap.get(state.selectedNodeId);
         if (!parent) return;
         const events = getVisibleRelatedEvents(state.selectedNodeDetail);
@@ -3704,7 +3738,7 @@ finance"></textarea>
           ctx.lineWidth = 1.5 / scale;
           ctx.stroke();
 
-          const title = evt.eventType || evt.eventTypeRaw || '関連イベント';
+          const title = evt.eventType || '関連イベント';
           const detail = buildRelatedEventDisplayText(evt) || '(表示項目なし)';
           const meta = buildRelatedEventMetaText(evt) || '詳細は右ペイン参照';
 
@@ -3834,19 +3868,12 @@ finance"></textarea>
         if (els.relatedEventsCard) els.relatedEventsCard.hidden = !enabled;
         if (els.selectedEventCard) els.selectedEventCard.hidden = !enabled;
         if (!enabled) {
-          state.selectedNodeEventsPayload = null;
-          state.selectedNodeEvents = [];
-          state.selectedNodeEventsLoading = false;
           state.selectedEventId = null;
           state.selectedEventDetail = null;
           els.relatedEventsSummary.textContent = '関連イベント表示はオフです。';
           els.relatedEventsList.innerHTML = '';
           els.selectedEventDetails.innerHTML = '<dt>イベント</dt><dd>関連イベント表示はオフです。</dd>';
-        } else if (state.selectedNodeDetail || state.selectedNodeId != null || state.selectedNodeEventsPayload) {
-          if (state.selectedNodeId != null && state.worker && !state.selectedNodeEventsPayload) {
-            state.selectedNodeEventsLoading = true;
-            state.worker.postMessage({ type: 'node-events', nodeId: state.selectedNodeId, renderOptions: state.currentRenderOptions || buildRenderOptionsSafe() });
-          }
+        } else if (state.selectedNodeDetail) {
           renderRelatedEvents(state.selectedNodeDetail);
           renderSelectedEventDetail(state.selectedEventDetail);
         } else {
@@ -3857,45 +3884,16 @@ finance"></textarea>
         renderViewerMeta();
       }
 
-      function getNodeEventsForDisplay(node) {
-        if (node && state.selectedNodeId != null && Number(node.id) === Number(state.selectedNodeId) && Array.isArray(state.selectedNodeEvents)) {
-          return state.selectedNodeEvents;
-        }
-        return Array.isArray(node && node.relatedEvents) ? node.relatedEvents : [];
-      }
-
-      function getNodeEventsMeta(node) {
-        if (node && state.selectedNodeEventsMeta && Number(state.selectedNodeEventsMeta.nodeId) === Number(node.id)) {
-          return state.selectedNodeEventsMeta;
-        }
-        const fallbackEvents = Array.isArray(node && node.relatedEvents) ? node.relatedEvents : [];
-        return {
-          nodeId: node ? Number(node.id) : null,
-          totalCount: Number.isFinite(Number(node && node.relatedEventsTotal)) ? Number(node.relatedEventsTotal) : fallbackEvents.length,
-          shownCount: fallbackEvents.length,
-          loading: false,
-          source: 'node-detail'
-        };
-      }
-
       function requestNodeDetail(nodeId) {
         if (!state.worker) return;
         setDetailsPaneOpen(true);
-        state.selectedNodeRequestToken = (state.selectedNodeRequestToken || 0) + 1;
-        const requestToken = state.selectedNodeRequestToken;
         state.selectedNodeDetail = null;
-        state.selectedNodeEventsPayload = null;
-        state.selectedNodeEvents = [];
-        state.selectedNodeEventsLoading = !!els.showRelatedEvents.checked;
         state.selectedEventId = null;
         state.selectedEventDetail = null;
         els.relatedEventsList.innerHTML = '';
         els.relatedEventsSummary.textContent = els.showRelatedEvents.checked ? '関連イベントを読込中…' : '関連イベント表示はオフです。';
         els.selectedEventDetails.innerHTML = els.showRelatedEvents.checked ? '<dt>イベント</dt><dd>未選択</dd>' : '<dt>イベント</dt><dd>関連イベント表示はオフです。</dd>';
-        state.worker.postMessage({ type: 'node-detail', nodeId, requestToken });
-        if (els.showRelatedEvents.checked) {
-          state.worker.postMessage({ type: 'node-events', nodeId, requestToken, renderOptions: state.currentRenderOptions || buildRenderOptionsSafe() });
-        }
+        state.worker.postMessage({ type: 'node-detail', nodeId });
       }
 
       function renderNodeDetail(node) {
@@ -3920,10 +3918,10 @@ finance"></textarea>
           ['親ノード', node.parentId || 'なし'],
           ['親推定補完', node.parentResolvedByInference ? `あり${node.parentEstimateReason ? ` (${node.parentEstimateReason})` : ''}` : 'なし'],
           ['子孫数', node.subtreeSize],
-          ['行数', node.rowCount],
+          ['関連行数', node.rowCount],
           ['元ファイル行範囲', rowRange || ''],
           ['代表行番号', node.representativeRow || ''],
-          ['開始判定行', node.anchorRow || ''],
+          ['プロセス作成行', node.anchorRow || ''],
           ['終了行番号', node.endRow || ''],
           ['確度', node.confidenceLabel],
           ['アンカー', formatAnchorDisplay(node)],
@@ -3932,7 +3930,7 @@ finance"></textarea>
           ['親開始時刻ヒント', formatTimestampValue(node.parentStartHintMs, node.parentStartHintRaw || '')],
           ['代表イベント', node.representativeEventType || ''],
           ['代表イベント時刻', formatTimestampValue(node.representativeEventTimeMs, node.representativeEventTimeRaw || '')],
-          ['関連イベント数', `${formatNumber(node.relatedEventsTotal || 0)}${node.relatedEventsDropped ? ` (保持上限内 ${formatNumber(Math.max(0, Number(node.relatedEventsTotal || 0) - Number(node.relatedEventsDropped || 0)))} / 省略 ${formatNumber(node.relatedEventsDropped)})` : ''}`],
+          ['関連イベント数', `${formatNumber(node.relatedEventsTotal || 0)}${node.relatedEventsDropped ? ` (保持 ${formatNumber((node.relatedEvents || []).length)} / 省略 ${formatNumber(node.relatedEventsDropped)})` : ''}`],
           ['フィルタで隠れた子', node.hiddenChildCount || 0],
           ['上限で省略', node.limitTruncatedChildren ? 'あり' : 'なし']
         ];
@@ -3954,7 +3952,7 @@ finance"></textarea>
           : '<dt>代表行</dt><dd>情報なし</dd>';
         els.analysisNotes.innerHTML = buildAnalysisNote(node);
         renderRelatedEvents(node);
-        renderSelectedEventDetail(state.selectedEventDetail);
+        renderSelectedEventDetail(null);
       }
 
 
@@ -3964,40 +3962,27 @@ finance"></textarea>
           els.relatedEventsList.innerHTML = '';
           return;
         }
-        const payload = state.selectedNodeEventsPayload || null;
-        if (!node && state.selectedNodeId == null && !payload) {
-          els.relatedEventsSummary.textContent = 'ノードを選択すると関連イベント一覧を表示します。';
-          els.relatedEventsList.innerHTML = '';
-          return;
-        }
-        if (state.selectedNodeEventsLoading && !payload) {
-          els.relatedEventsSummary.textContent = '関連イベントを読込中…';
-          els.relatedEventsList.innerHTML = '';
-          return;
-        }
-        const useFetchedEvents = shouldUseFetchedRelatedEvents(node);
-        const allEvents = getAllRelatedEvents(node);
+        const allEvents = Array.isArray(node && node.relatedEvents) ? node.relatedEvents : [];
         const events = getVisibleRelatedEvents(node);
-        const total = useFetchedEvents && payload && Number.isFinite(Number(payload.totalCount)) ? Number(payload.totalCount) : (node ? Number(node.relatedEventsTotal || allEvents.length) : allEvents.length);
-        const shown = useFetchedEvents && payload && Number.isFinite(Number(payload.shownCount)) ? Number(payload.shownCount) : events.length;
-        const dropped = node ? (node.relatedEventsDropped || 0) : 0;
-        const hiddenByTime = useFetchedEvents ? Math.max(0, total - shown) : 0;
-        if (!events.length) {
-          if (total && shown === 0) {
+        if (!node || !events.length) {
+          const total = node ? (node.relatedEventsTotal || 0) : 0;
+          if (total && allEvents.length) {
             els.relatedEventsSummary.textContent = '関連イベントはありますが、現在の表示時刻フィルタでは一致しません。';
           } else {
-            els.relatedEventsSummary.textContent = total ? '関連イベントはありますが、現在一覧表示できるイベントはありません。' : 'このノードに関連する ProcessCreate 以外のイベントはありません。';
+            els.relatedEventsSummary.textContent = total ? `関連イベントはありますが、保持上限の都合で一覧は空です。` : 'このノードに関連する ProcessCreate 以外のイベントはありません。';
           }
           els.relatedEventsList.innerHTML = '';
           return;
         }
-        els.relatedEventsSummary.textContent = `関連イベント ${formatNumber(events.length)} / 総数 ${formatNumber(total)}${hiddenByTime ? ` / 時刻外 ${formatNumber(hiddenByTime)}` : ''}${dropped ? ` / 省略 ${formatNumber(dropped)}` : ''}`;
+        const dropped = node.relatedEventsDropped || 0;
+        const hiddenByTime = Math.max(0, allEvents.length - events.length);
+        els.relatedEventsSummary.textContent = `関連イベント ${formatNumber(events.length)} / 総数 ${formatNumber(node.relatedEventsTotal || allEvents.length)}${hiddenByTime ? ` / 時刻外 ${formatNumber(hiddenByTime)}` : ''}${dropped ? ` / 省略 ${formatNumber(dropped)}` : ''}`;
         els.relatedEventsList.innerHTML = '';
         events.forEach((evt) => {
           const btn = document.createElement('button');
           btn.className = `event-item${state.selectedEventId === evt.id ? ' active' : ''}`;
           btn.type = 'button';
-          btn.innerHTML = `<div class="title">${escapeHtml(evt.eventType || evt.eventTypeRaw || '関連イベント')}</div><div class="meta">${escapeHtml(buildRelatedEventDisplayText(evt) || '(表示項目なし)')}</div><div class="event-item-snippet">${escapeHtml(buildRelatedEventMetaText(evt))}</div>`;
+          btn.innerHTML = `<div class="title">${escapeHtml(evt.eventType || '関連イベント')}</div><div class="meta">${escapeHtml(buildRelatedEventDisplayText(evt) || '(表示項目なし)')}</div><div class="event-item-snippet">${escapeHtml(buildRelatedEventMetaText(evt))}</div>`;
           btn.addEventListener('click', () => {
             state.selectedEventId = evt.id;
             state.selectedEventDetail = evt;
@@ -4019,7 +4004,7 @@ finance"></textarea>
           return;
         }
         const rows = [
-          ['種別', evt.eventType || evt.eventTypeRaw || ''],
+          ['種別', evt.eventType || ''],
           ['内容', buildRelatedEventDisplayText(evt)],
           ['時刻', formatTimestampValue(evt.eventTimeMs, evt.eventTimeRaw || '')],
           ['行番号', evt.rowNumber || '']
@@ -4031,42 +4016,13 @@ finance"></textarea>
       function getActiveEventTimeFilterRange() {
         const options = state.currentRenderOptions || null;
         if (!options) return { fromMs: null, toMs: null };
-        const fromMs = options.eventTimeFromMs != null && Number.isFinite(Number(options.eventTimeFromMs))
-          ? Number(options.eventTimeFromMs)
-          : null;
-        const toMs = options.eventTimeToMs != null && Number.isFinite(Number(options.eventTimeToMs))
-          ? Number(options.eventTimeToMs)
-          : null;
+        const fromMs = Number.isFinite(Number(options.eventTimeFromMs)) ? Number(options.eventTimeFromMs) : null;
+        const toMs = Number.isFinite(Number(options.eventTimeToMs)) ? Number(options.eventTimeToMs) : null;
         return { fromMs, toMs };
       }
 
-      function hasActiveEventTimeFilter() {
-        const { fromMs, toMs } = getActiveEventTimeFilterRange();
-        return fromMs != null || toMs != null;
-      }
-
-      function shouldUseFetchedRelatedEvents(node) {
-        const payload = state.selectedNodeEventsPayload || null;
-        if (!payload || !Array.isArray(state.selectedNodeEvents)) return false;
-        if (state.selectedNodeId == null || Number(payload.nodeId) !== Number(state.selectedNodeId)) return false;
-        if (state.selectedNodeEvents.length) return true;
-        if (hasActiveEventTimeFilter()) return true;
-        const total = Number(payload.totalCount);
-        return Number.isFinite(total) && total === 0;
-      }
-
-      function getAllRelatedEvents(node) {
-        if (shouldUseFetchedRelatedEvents(node)) {
-          return state.selectedNodeEvents;
-        }
-        return Array.isArray(node && node.relatedEvents) ? node.relatedEvents : [];
-      }
-
       function getVisibleRelatedEvents(node) {
-        if (shouldUseFetchedRelatedEvents(node)) {
-          return state.selectedNodeEvents;
-        }
-        const events = getAllRelatedEvents(node);
+        const events = Array.isArray(node && node.relatedEvents) ? node.relatedEvents : [];
         const { fromMs, toMs } = getActiveEventTimeFilterRange();
         if (fromMs == null && toMs == null) return events;
         return events.filter((evt) => {
@@ -4100,80 +4056,13 @@ finance"></textarea>
       }
 
       function findSelectedNodeEvent(eventId) {
-        const events = Array.isArray(state.selectedNodeEvents) && state.selectedNodeEvents.length
-          ? state.selectedNodeEvents
-          : getVisibleRelatedEvents(state.selectedNodeDetail);
-        return events.find(item => item.id === eventId) || null;
-      }
-
-      function revealRelatedEventsPanel() {
-        if (!els.relatedEventsCard || els.relatedEventsCard.hidden) return;
-        const container = els.relatedEventsCard.closest('.details-body');
-        if (!container) return;
-        const cardTop = els.relatedEventsCard.offsetTop;
-        const cardBottom = cardTop + els.relatedEventsCard.offsetHeight;
-        const viewTop = container.scrollTop;
-        const viewBottom = viewTop + container.clientHeight;
-        if (cardTop < viewTop || cardBottom > viewBottom) {
-          try {
-            els.relatedEventsCard.scrollIntoView({ block: 'nearest' });
-          } catch (error) {
-            // ignore scroll support issues
-          }
-        }
-      }
-
-      function getSelectedRelatedEventPanelBounds() {
-        if (!els.showRelatedEventNodes.checked || !els.showRelatedEvents.checked) return null;
-        if (!state.currentTree || !Array.isArray(state.currentTree.nodes) || !state.selectedNodeId) return null;
-        const parent = state.currentTree.nodes.find(item => Number(item.id) === Number(state.selectedNodeId));
-        if (!parent) return null;
         const events = getVisibleRelatedEvents(state.selectedNodeDetail);
-        if (!events.length) return null;
-        const eventW = 228;
-        const eventH = 72;
-        const gap = 10;
-        const topGap = 26;
-        const x = parent.layoutX + (BOX_WIDTH - eventW) / 2;
-        const startY = parent.layoutY + BOX_HEIGHT + topGap;
-        const totalH = events.length * eventH + Math.max(0, events.length - 1) * gap;
-        return {
-          minX: x - 12,
-          minY: startY - 12,
-          maxX: x + eventW + 12,
-          maxY: startY + totalH + 12
-        };
-      }
-
-      function ensureSelectedRelatedEventsVisible() {
-        const bounds = getSelectedRelatedEventPanelBounds();
-        if (!bounds) return;
-        const margin = 24;
-        const scale = state.transform.scale || 1;
-        const minScreenX = bounds.minX * scale + state.transform.x;
-        const maxScreenX = bounds.maxX * scale + state.transform.x;
-        const minScreenY = bounds.minY * scale + state.transform.y;
-        const maxScreenY = bounds.maxY * scale + state.transform.y;
-        if (maxScreenX > canvas.clientWidth - margin) {
-          state.transform.x -= maxScreenX - (canvas.clientWidth - margin);
-        }
-        if (minScreenX < margin) {
-          state.transform.x += margin - minScreenX;
-        }
-        if (maxScreenY > canvas.clientHeight - margin) {
-          state.transform.y -= maxScreenY - (canvas.clientHeight - margin);
-        }
-        if (minScreenY < margin) {
-          state.transform.y += margin - minScreenY;
-        }
+        return events.find(item => item.id === eventId) || null;
       }
 
       function clearSelection() {
         state.selectedNodeId = null;
         state.selectedNodeDetail = null;
-        state.selectedNodeEventsPayload = null;
-        state.selectedNodeEvents = [];
-        state.selectedNodeEventsLoading = false;
         state.selectedEventId = null;
         state.selectedEventDetail = null;
         renderNodeDetail(null);
@@ -4441,6 +4330,30 @@ finance"></textarea>
         } catch {
           return { mode: 'jst' };
         }
+      }
+
+      function parseDateTimeLocalInTimeZone(value, timeZoneConfig) {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/);
+        if (!m) return null;
+        const year = Number(m[1]);
+        const month = Number(m[2]);
+        const day = Number(m[3]);
+        const hour = Number(m[4]);
+        const minute = Number(m[5]);
+        const second = Number(m[6] || '0');
+        const millisecond = Number(String(m[7] || '0').padEnd(3, '0').slice(0, 3));
+        const cfg = timeZoneConfig || { mode: 'jst' };
+        if (cfg.mode === 'local') {
+          return new Date(year, month - 1, day, hour, minute, second, millisecond).getTime();
+        }
+        const offsetMinutes = cfg.mode === 'jst'
+          ? 9 * 60
+          : cfg.mode === 'offset'
+            ? cfg.offsetMinutes
+            : 0;
+        return Date.UTC(year, month - 1, day, hour, minute, second, millisecond) - offsetMinutes * 60 * 1000;
       }
 
       function parseOffsetMinutes(value) {

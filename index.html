@@ -22,6 +22,9 @@
       --danger: #b3261e;
       --root: #5c4b99;
       --shadow: 0 12px 34px rgba(22, 34, 48, 0.11);
+      --details-width: 340px;
+      --details-min-width: 280px;
+      --splitter-size: 10px;
       font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Yu Gothic UI", "Meiryo", sans-serif;
     }
 
@@ -108,7 +111,7 @@
 
     .layout {
       display: grid;
-      grid-template-columns: minmax(320px, 380px) 1fr minmax(280px, 340px);
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) var(--splitter-size) minmax(var(--details-min-width), var(--details-width));
       gap: 0;
       height: 100%;
       min-height: 0;
@@ -119,6 +122,29 @@
     main {
       min-width: 0;
       min-height: 0;
+    }
+
+    .details-resizer {
+      width: var(--splitter-size);
+      min-width: var(--splitter-size);
+      cursor: col-resize;
+      background: linear-gradient(to right, transparent 0, transparent 3px, var(--line) 3px, var(--line) 7px, transparent 7px, transparent 100%);
+      position: relative;
+      z-index: 5;
+      touch-action: none;
+    }
+
+    .details-resizer:hover,
+    .details-resizer:focus-visible,
+    .app.resizing .details-resizer {
+      background: linear-gradient(to right, transparent 0, transparent 3px, var(--accent) 3px, var(--accent) 7px, transparent 7px, transparent 100%);
+      outline: none;
+    }
+
+    .app.resizing,
+    .app.resizing * {
+      cursor: col-resize !important;
+      user-select: none !important;
     }
 
     .sidebar,
@@ -854,6 +880,10 @@
         grid-template-rows: minmax(0, 1fr) auto;
       }
 
+      .details-resizer {
+        display: none;
+      }
+
       .details {
         grid-column: 1 / -1;
         border-left: 0;
@@ -891,6 +921,10 @@
         grid-template-rows: auto;
         height: auto;
         overflow: visible;
+      }
+
+      .details-resizer {
+        display: none;
       }
 
       .sidebar,
@@ -1072,7 +1106,9 @@
         </section>
       </main>
 
-      <aside class="details">
+      <div class="details-resizer" id="detailsResizer" role="separator" aria-label="Details width resize handle" aria-orientation="vertical" tabindex="0"></div>
+
+      <aside class="details" id="detailsPane">
         <section class="panel-section">
           <h2>Details</h2>
           <div class="details-body" id="detailsBody">
@@ -1919,6 +1955,10 @@
       warnings: document.getElementById("warnings"),
       treeScroll: document.getElementById("treeScroll"),
       detailsBody: document.getElementById("detailsBody"),
+      detailsResizer: document.getElementById("detailsResizer"),
+      detailsPane: document.getElementById("detailsPane"),
+      app: document.querySelector(".app"),
+      layout: document.querySelector(".layout"),
       searchInput: document.getElementById("searchInput"),
       searchMode: document.getElementById("searchMode"),
       expandButton: document.getElementById("expandButton"),
@@ -1955,7 +1995,8 @@
       rowRequestId: 0,
       search: "",
       visibleMatches: null,
-      childReveal: new Map()
+      childReveal: new Map(),
+      detailsWidth: 340
     };
 
     function normalizeHeader(value) {
@@ -1989,6 +2030,55 @@
         unit += 1;
       }
       return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+    }
+
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function detailsResizeBounds() {
+      const layoutRect = els.layout.getBoundingClientRect();
+      const sidebarRect = els.layout.querySelector(".sidebar").getBoundingClientRect();
+      const splitterSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--splitter-size")) || 10;
+      const minWidth = 280;
+      const maxWidth = Math.max(minWidth, layoutRect.width - sidebarRect.width - splitterSize - 320);
+      return { minWidth, maxWidth };
+    }
+
+    function applyDetailsWidth(width) {
+      if (!els.detailsPane) return;
+      if (window.matchMedia("(max-width: 1180px)").matches) return;
+      const bounds = detailsResizeBounds();
+      state.detailsWidth = clamp(Number(width) || state.detailsWidth || 340, bounds.minWidth, bounds.maxWidth);
+      document.documentElement.style.setProperty("--details-width", `${state.detailsWidth}px`);
+    }
+
+    function resetDetailsWidth() {
+      state.detailsWidth = 340;
+      applyDetailsWidth(state.detailsWidth);
+    }
+
+    function beginDetailsResize(startX) {
+      if (!els.detailsResizer || window.matchMedia("(max-width: 1180px)").matches) return;
+      const startWidth = els.detailsPane.getBoundingClientRect().width;
+      els.app.classList.add("resizing");
+
+      function onMove(event) {
+        const delta = startX - event.clientX;
+        applyDetailsWidth(startWidth + delta);
+      }
+
+      function onUp() {
+        els.app.classList.remove("resizing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      }
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
     }
 
     function parseDelimitedLine(line, delimiter) {
@@ -2983,6 +3073,37 @@
       if (file) loadFile(file);
     });
 
+    els.detailsResizer.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      beginDetailsResize(event.clientX);
+    });
+    els.detailsResizer.addEventListener("dblclick", () => {
+      resetDetailsWidth();
+    });
+    els.detailsResizer.addEventListener("keydown", (event) => {
+      if (window.matchMedia("(max-width: 1180px)").matches) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        applyDetailsWidth((state.detailsWidth || els.detailsPane.getBoundingClientRect().width) + 24);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        applyDetailsWidth((state.detailsWidth || els.detailsPane.getBoundingClientRect().width) - 24);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        applyDetailsWidth(detailsResizeBounds().minWidth);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        applyDetailsWidth(detailsResizeBounds().maxWidth);
+      }
+    });
+    window.addEventListener("resize", () => {
+      if (window.matchMedia("(max-width: 1180px)").matches) {
+        document.documentElement.style.removeProperty("--details-width");
+      } else {
+        applyDetailsWidth(state.detailsWidth);
+      }
+    });
+
     els.analyzeButton.addEventListener("click", startAnalysis);
     els.cancelButton.addEventListener("click", stopAnalysis);
     els.expandButton.addEventListener("click", expandAll);
@@ -3006,6 +3127,7 @@
       startAnalysis();
     });
 
+    resetDetailsWidth();
     renderMapping();
   </script>
 </body>

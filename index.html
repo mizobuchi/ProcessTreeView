@@ -262,7 +262,8 @@
     select,
     input[type="search"],
     input[type="number"],
-    input[type="text"] {
+    input[type="text"],
+    textarea {
       width: 100%;
       border: 1px solid var(--line-strong);
       border-radius: 8px;
@@ -270,6 +271,11 @@
       padding: 6px 9px;
       background: #fff;
       color: var(--text);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 56px;
     }
 
     input[type="checkbox"] {
@@ -358,7 +364,20 @@
 
     .tree-toolbar {
       display: grid;
-      grid-template-columns: 1fr auto auto;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: start;
+    }
+
+    .search-stack {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
       gap: 8px;
       align-items: center;
     }
@@ -738,6 +757,87 @@
       color: #771a14;
     }
 
+
+    .term-highlight {
+      display: inline;
+      border-radius: 4px;
+      padding: 0 2px;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+      font-weight: 700;
+    }
+
+    .term-highlight.term-0,
+    .term-chip.term-0 {
+      background: #fff1a8;
+      color: #4a4100;
+    }
+
+    .term-highlight.term-1,
+    .term-chip.term-1 {
+      background: #c8f7c5;
+      color: #155724;
+    }
+
+    .term-highlight.term-2,
+    .term-chip.term-2 {
+      background: #cfe8ff;
+      color: #0b4f88;
+    }
+
+    .term-highlight.term-3,
+    .term-chip.term-3 {
+      background: #f7d0ff;
+      color: #7a1f87;
+    }
+
+    .term-highlight.term-4,
+    .term-chip.term-4 {
+      background: #ffd8b5;
+      color: #8a3d00;
+    }
+
+    .term-highlight.term-5,
+    .term-chip.term-5 {
+      background: #d9f2e6;
+      color: #0f5c46;
+    }
+
+    .term-highlight.term-6,
+    .term-chip.term-6 {
+      background: #ffd6de;
+      color: #8f1233;
+    }
+
+    .term-highlight.term-7,
+    .term-chip.term-7 {
+      background: #e3dcff;
+      color: #4f34a3;
+    }
+
+    .match-term-badges {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .term-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      line-height: 1;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      white-space: nowrap;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .split-buttons {
       display: flex;
       gap: 8px;
@@ -812,6 +912,10 @@
       }
 
       .tree-toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .search-row {
         grid-template-columns: 1fr;
       }
 
@@ -890,6 +994,16 @@
                 <option value="500">500</option>
               </select>
             </div>
+            <div class="field-row">
+              <label for="encodingSelect">文字コード</label>
+              <select id="encodingSelect">
+                <option value="auto" selected>Auto</option>
+                <option value="utf-8">UTF-8</option>
+                <option value="shift-jis">Shift-JIS</option>
+                <option value="utf-16le">UTF-16 LE</option>
+                <option value="utf-16be">UTF-16 BE</option>
+              </select>
+            </div>
             <label class="checkbox-row">
               <input type="checkbox" id="includeUnknownRoot" checked>
               <span>親情報なしをデバイス単位でまとめる</span>
@@ -927,7 +1041,16 @@
         <section class="tree-head">
           <h2>Tree</h2>
           <div class="tree-toolbar">
-            <input id="searchInput" type="search" placeholder="プロセス名、PID、コマンドライン、デバイス、ユーザーで検索" disabled>
+            <div class="search-stack">
+              <textarea id="searchInput" rows="2" placeholder="検索語を改行 / , / ; 区切りで複数入力" disabled></textarea>
+              <div class="search-row">
+                <select id="searchMode" disabled title="検索条件">
+                  <option value="or" selected>OR: いずれか一致</option>
+                  <option value="and">AND: すべて一致</option>
+                </select>
+                <div class="hint">対象: プロセス名 / PID / コマンドライン / デバイス / ユーザー</div>
+              </div>
+            </div>
             <div class="tree-tools-group">
               <button class="icon-button" id="expandButton" type="button" disabled title="全展開">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
@@ -1797,11 +1920,13 @@
       treeScroll: document.getElementById("treeScroll"),
       detailsBody: document.getElementById("detailsBody"),
       searchInput: document.getElementById("searchInput"),
+      searchMode: document.getElementById("searchMode"),
       expandButton: document.getElementById("expandButton"),
       collapseButton: document.getElementById("collapseButton"),
       sortMode: document.getElementById("sortMode"),
       renderLimit: document.getElementById("renderLimit"),
       childLimit: document.getElementById("childLimit"),
+      encodingSelect: document.getElementById("encodingSelect"),
       includeUnknownRoot: document.getElementById("includeUnknownRoot"),
       preferTimeInference: document.getElementById("preferTimeInference"),
       exportCsvButton: document.getElementById("exportCsvButton"),
@@ -1814,6 +1939,7 @@
       headers: [],
       delimiter: ",",
       encoding: "utf-8",
+      detectedEncoding: "utf-8",
       mapping: {},
       worker: null,
       graph: null,
@@ -1926,14 +2052,27 @@
     }
 
     function detectEncoding(bytes) {
+      if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return "utf-8";
       if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) return "utf-16le";
       if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) return "utf-16be";
-      return "utf-8";
+      try {
+        new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        return "utf-8";
+      } catch (error) {
+        return "shift-jis";
+      }
     }
 
     function decodeBytes(buffer, encoding) {
       return new TextDecoder(encoding || "utf-8", { fatal: false }).decode(buffer);
     }
+
+    function resolveEncoding(bytes) {
+      const selected = els.encodingSelect ? els.encodingSelect.value : "auto";
+      if (selected && selected !== "auto") return selected;
+      return detectEncoding(bytes);
+    }
+
 
     function scoreHeader(fieldKey, normalizedHeader) {
       if (!normalizedHeader) return -Infinity;
@@ -2023,7 +2162,9 @@
       els.fileName.textContent = `${file.name} (${formatBytes(file.size)})`;
       setProgress(0, "ヘッダーを読み取り中");
       const sampleBuffer = await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer();
-      state.encoding = detectEncoding(new Uint8Array(sampleBuffer));
+      const sampleBytes = new Uint8Array(sampleBuffer);
+      state.detectedEncoding = detectEncoding(sampleBytes);
+      state.encoding = resolveEncoding(sampleBytes);
       const sample = decodeBytes(sampleBuffer, state.encoding);
       state.delimiter = detectDelimiter(sample);
       const firstLine = sample.split(/\r?\n/).find((line) => line.trim()) || "";
@@ -2031,7 +2172,10 @@
       state.mapping = autoMap(state.headers);
       renderMapping();
       clearResult();
-      setProgress(0, `${state.headers.length} 列を検出 / 区切り文字: ${state.delimiter === "\t" ? "TAB" : state.delimiter} / ${state.encoding}`);
+      const encodingLabel = els.encodingSelect && els.encodingSelect.value === "auto"
+        ? `${state.encoding} (auto)`
+        : state.encoding;
+      setProgress(0, `${state.headers.length} 列を検出 / 区切り文字: ${state.delimiter === "\t" ? "TAB" : state.delimiter} / ${encodingLabel}`);
     }
 
     function setProgress(percent, text) {
@@ -2062,7 +2206,7 @@
     }
 
     function setGraphControls(enabled) {
-      for (const el of [els.searchInput, els.expandButton, els.collapseButton, els.sortMode, els.exportCsvButton, els.exportJsonButton]) {
+      for (const el of [els.searchInput, els.searchMode, els.expandButton, els.collapseButton, els.sortMode, els.exportCsvButton, els.exportJsonButton]) {
         el.disabled = !enabled;
       }
     }
@@ -2253,22 +2397,138 @@
       return `ActionType: ${shown.join(", ")}${hidden > 0 ? `, +${formatNumber(hidden)}` : ""}`;
     }
 
-    function buildVisibleMatches(query) {
-      if (!query) return null;
-      const q = query.toLowerCase();
-      const matches = new Set();
-      const visible = new Set();
-      for (const node of state.graph.nodes) {
-        if (nodeSearchText(node).includes(q)) {
-          matches.add(node.id);
-          let current = node;
-          while (current) {
-            visible.add(current.id);
-            current = current.parentId != null ? state.nodeById.get(current.parentId) : null;
+
+    function parseSearchTerms(raw) {
+      const seen = new Set();
+      return String(raw || "")
+        .split(/[\n,;]+/)
+        .map((term) => term.trim())
+        .filter(Boolean)
+        .filter((term) => {
+          const key = term.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    }
+
+    function nodeMatchesTerms(node, terms, mode) {
+      if (!terms.length) return true;
+      const haystack = nodeSearchText(node);
+      const normalizedTerms = terms.map((term) => term.toLowerCase());
+      if (mode === "and") return normalizedTerms.every((term) => haystack.includes(term));
+      return normalizedTerms.some((term) => haystack.includes(term));
+    }
+
+    function termClass(index) {
+      return `term-${index % 8}`;
+    }
+
+    function buildHighlightRanges(text, terms) {
+      const source = String(text || "");
+      if (!source || !terms || !terms.length) return [];
+      const lowerSource = source.toLowerCase();
+      const order = terms
+        .map((term, index) => ({ term, index, lower: term.toLowerCase() }))
+        .filter((entry) => entry.lower)
+        .sort((a, b) => b.lower.length - a.lower.length || a.index - b.index);
+      const owner = new Array(source.length).fill(-1);
+      for (const entry of order) {
+        let fromIndex = 0;
+        while (fromIndex < lowerSource.length) {
+          const found = lowerSource.indexOf(entry.lower, fromIndex);
+          if (found === -1) break;
+          const end = found + entry.lower.length;
+          let occupied = false;
+          for (let i = found; i < end; i += 1) {
+            if (owner[i] !== -1) {
+              occupied = true;
+              break;
+            }
           }
+          if (!occupied) {
+            for (let i = found; i < end; i += 1) owner[i] = entry.index;
+          }
+          fromIndex = found + Math.max(1, entry.lower.length);
         }
       }
-      return { matches, visible };
+      const ranges = [];
+      let start = -1;
+      let current = -1;
+      for (let i = 0; i < owner.length; i += 1) {
+        if (owner[i] !== current) {
+          if (current !== -1) ranges.push({ start, end: i, index: current });
+          current = owner[i];
+          start = current !== -1 ? i : -1;
+        }
+      }
+      if (current !== -1) ranges.push({ start, end: owner.length, index: current });
+      return ranges;
+    }
+
+    function highlightText(text, terms) {
+      const source = String(text || "");
+      if (!source) return "";
+      const ranges = buildHighlightRanges(source, terms);
+      if (!ranges.length) return escapeHtml(source);
+      const html = [];
+      let cursor = 0;
+      for (const range of ranges) {
+        if (cursor < range.start) html.push(escapeHtml(source.slice(cursor, range.start)));
+        html.push(`<mark class="term-highlight ${termClass(range.index)}">${escapeHtml(source.slice(range.start, range.end))}</mark>`);
+        cursor = range.end;
+      }
+      if (cursor < source.length) html.push(escapeHtml(source.slice(cursor)));
+      return html.join("");
+    }
+
+    function nodeMatchedTerms(node) {
+      if (!state.visibleMatches || !state.visibleMatches.terms || !state.visibleMatches.terms.length) return [];
+      const haystack = nodeSearchText(node);
+      return state.visibleMatches.terms.filter((term) => haystack.includes(term.toLowerCase()));
+    }
+
+    function renderMatchedTermBadges(node, limit) {
+      const matchedTerms = nodeMatchedTerms(node);
+      if (!matchedTerms.length) return "";
+      const shown = matchedTerms.slice(0, limit).map((term, index) => {
+        const originalIndex = state.visibleMatches.terms.findIndex((entry) => entry.toLowerCase() === term.toLowerCase());
+        return `<span class="term-chip ${termClass(originalIndex >= 0 ? originalIndex : index)}">${escapeHtml(term)}</span>`;
+      });
+      if (matchedTerms.length > limit) {
+        shown.push(`<span class="badge more-action">+${formatNumber(matchedTerms.length - limit)}</span>`);
+      }
+      return `<div class="match-term-badges">${shown.join("")}</div>`;
+    }
+
+    function buildVisibleMatches(query, mode) {
+      const terms = parseSearchTerms(query);
+      if (!terms.length) return null;
+      const matches = new Set();
+      const visible = new Set();
+      const expandedDescendants = new Set();
+      for (const node of state.graph.nodes) {
+        if (!nodeMatchesTerms(node, terms, mode)) continue;
+        matches.add(node.id);
+
+        let current = node;
+        while (current) {
+          visible.add(current.id);
+          current = current.parentId != null ? state.nodeById.get(current.parentId) : null;
+        }
+
+        const stack = [node.id];
+        while (stack.length) {
+          const currentId = stack.pop();
+          if (expandedDescendants.has(currentId)) continue;
+          expandedDescendants.add(currentId);
+          visible.add(currentId);
+          const currentNode = state.nodeById.get(currentId);
+          if (!currentNode) continue;
+          for (const childId of currentNode.children || []) stack.push(childId);
+        }
+      }
+      return { terms, mode, matches, visible };
     }
 
     function visibleChildren(node) {
@@ -2282,7 +2542,7 @@
     function renderTree() {
       if (!state.graph) return;
       state.search = els.searchInput.value.trim();
-      state.visibleMatches = buildVisibleMatches(state.search);
+      state.visibleMatches = buildVisibleMatches(state.search, els.searchMode.value);
       const roots = state.graph.roots
         .map((id) => state.nodeById.get(id))
         .filter(Boolean)
@@ -2302,9 +2562,10 @@
     function renderNode(node, depth) {
       const children = visibleChildren(node);
       const expandable = children.length > 0;
-      const isExpanded = state.expanded.has(node.id) || Boolean(state.search);
+      const isExpanded = state.expanded.has(node.id) || Boolean(state.visibleMatches);
       const selected = state.selectedId === node.id;
       const matched = state.visibleMatches && state.visibleMatches.matches.has(node.id);
+      const matchedTerms = matched ? nodeMatchedTerms(node) : [];
       const rowClass = [
         "node-row",
         node.inferred ? "inferred" : "",
@@ -2344,10 +2605,11 @@
             </button>
             <div class="node-main">
               <div class="node-title">
-                <span class="proc-name">${escapeHtml(node.name)}</span>
+                <span class="proc-name">${highlightText(node.name, matchedTerms)}</span>
               </div>
-              <div class="node-meta">${escapeHtml(meta || "no metadata")}</div>
-              <div class="node-sub">${escapeHtml(sub)}</div>
+              <div class="node-meta">${highlightText(meta || "no metadata", matchedTerms)}</div>
+              <div class="node-sub">${highlightText(sub, matchedTerms)}</div>
+              ${matched ? renderMatchedTermBadges(node, 6) : ""}
             </div>
             <div class="badges">${badges}</div>
           </div>
@@ -2726,10 +2988,15 @@
     els.expandButton.addEventListener("click", expandAll);
     els.collapseButton.addEventListener("click", collapseAll);
     els.searchInput.addEventListener("input", debounce(renderTree, 160));
+    els.searchMode.addEventListener("change", renderTree);
     els.sortMode.addEventListener("change", renderTree);
     els.childLimit.addEventListener("change", () => {
       state.childReveal.clear();
       renderTree();
+    });
+    els.encodingSelect.addEventListener("change", async () => {
+      if (!state.file || state.worker) return;
+      await loadFile(state.file);
     });
     els.exportCsvButton.addEventListener("click", exportCsv);
     els.exportJsonButton.addEventListener("click", exportJson);

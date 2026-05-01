@@ -1,0 +1,3181 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MDE Process Tree Builder</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f8;
+      --panel: #ffffff;
+      --panel-2: #eef2f5;
+      --line: #d7dde3;
+      --line-strong: #b7c1cb;
+      --text: #18212b;
+      --muted: #5f6b78;
+      --muted-2: #7a8794;
+      --accent: #1264a3;
+      --accent-2: #0a7f71;
+      --warn: #a75b00;
+      --danger: #b3261e;
+      --root: #5c4b99;
+      --shadow: 0 12px 34px rgba(22, 34, 48, 0.11);
+      --details-width: 340px;
+      --details-min-width: 280px;
+      --splitter-size: 10px;
+      font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Yu Gothic UI", "Meiryo", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      height: 100vh;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: #16293d;
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: 0;
+      flex: 0 0 auto;
+    }
+
+    h1 {
+      font-size: 18px;
+      line-height: 1.2;
+      margin: 0;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) var(--splitter-size) minmax(var(--details-min-width), var(--details-width));
+      gap: 0;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    aside,
+    main {
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .details-resizer {
+      width: var(--splitter-size);
+      min-width: var(--splitter-size);
+      cursor: col-resize;
+      background: linear-gradient(to right, transparent 0, transparent 3px, var(--line) 3px, var(--line) 7px, transparent 7px, transparent 100%);
+      position: relative;
+      z-index: 5;
+      touch-action: none;
+    }
+
+    .details-resizer:hover,
+    .details-resizer:focus-visible,
+    .app.resizing .details-resizer {
+      background: linear-gradient(to right, transparent 0, transparent 3px, var(--accent) 3px, var(--accent) 7px, transparent 7px, transparent 100%);
+      outline: none;
+    }
+
+    .app.resizing,
+    .app.resizing * {
+      cursor: col-resize !important;
+      user-select: none !important;
+    }
+
+    .sidebar,
+    .details {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .details {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+      align-self: stretch;
+    }
+
+    .details .panel-section {
+      min-height: 100%;
+    }
+
+    .panel-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-section h2,
+    .tree-head h2,
+    .details h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      margin: 0 0 12px;
+    }
+
+    .file-drop {
+      display: grid;
+      gap: 10px;
+      place-items: center;
+      min-height: 124px;
+      padding: 16px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel-2);
+      text-align: center;
+    }
+
+    .file-drop.dragging {
+      border-color: var(--accent);
+      background: #e6f2fb;
+    }
+
+    .file-drop input {
+      inline-size: 100%;
+      max-inline-size: 280px;
+    }
+
+    .file-name {
+      font-size: 13px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .button,
+    .icon-button {
+      border: 1px solid var(--line-strong);
+      background: #fff;
+      color: var(--text);
+      border-radius: 8px;
+      min-height: 34px;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 650;
+    }
+
+    .button.ghost {
+      background: transparent;
+    }
+
+    .button:disabled,
+    .icon-button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .icon-button {
+      width: 36px;
+      padding: 0;
+      flex: 0 0 auto;
+    }
+
+    .button:hover:not(:disabled),
+    .icon-button:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: #eef7fd;
+    }
+
+    .button.primary:hover:not(:disabled) {
+      background: #0d548a;
+    }
+
+    .icon {
+      width: 17px;
+      height: 17px;
+      display: inline-block;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .mapping-grid,
+    .settings-grid {
+      display: grid;
+      gap: 9px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      align-items: center;
+      gap: 10px;
+    }
+
+    label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    select,
+    input[type="search"],
+    input[type="number"],
+    input[type="text"],
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      min-height: 34px;
+      padding: 6px 9px;
+      background: #fff;
+      color: var(--text);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 56px;
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
+
+    .checkbox-row {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .progress-wrap {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .progress {
+      overflow: hidden;
+      height: 8px;
+      border-radius: 999px;
+      background: #dce3ea;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent-2);
+      transition: width 140ms ease;
+    }
+
+    .progress-text,
+    .hint,
+    .stat-caption {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .status-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+      min-width: 0;
+    }
+
+    .stat-value {
+      display: block;
+      font-size: 19px;
+      font-weight: 750;
+      line-height: 1.1;
+    }
+
+    .tree-pane {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 0;
+      height: 100%;
+      background: #fbfcfd;
+      overflow: hidden;
+    }
+
+    .tree-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      display: grid;
+      gap: 12px;
+    }
+
+    .tree-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: start;
+    }
+
+    .search-stack {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tree-tools-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .tree-scroll {
+      overflow: auto;
+      padding: 12px 14px 24px;
+      min-height: 0;
+    }
+
+    .empty {
+      min-height: 220px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed var(--line-strong);
+      border-radius: 8px;
+      background: #fff;
+      padding: 24px;
+    }
+
+    .tree-root-list,
+    .children {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .tree-root-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .tree-node {
+      margin: 0;
+    }
+
+    .node-row {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 7px;
+      min-height: 40px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 5px 7px;
+      background: #fff;
+    }
+
+    .node-row:hover {
+      border-color: var(--line-strong);
+      box-shadow: 0 2px 10px rgba(20, 35, 52, 0.05);
+    }
+
+    .node-row.selected {
+      border-color: var(--accent);
+      background: #eef7fd;
+    }
+
+    .node-row.inferred {
+      background: #fff9ef;
+    }
+
+    .node-row.root {
+      background: #f7f4ff;
+    }
+
+    .twisty {
+      width: 26px;
+      height: 26px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+
+    .twisty:hover {
+      background: rgba(18, 100, 163, 0.08);
+      color: var(--accent);
+    }
+
+    .node-main {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .node-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .proc-name {
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .node-meta,
+    .node-sub {
+      font-size: 12px;
+      color: var(--muted);
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .node-sub {
+      color: var(--muted-2);
+    }
+
+    .badges {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      background: #fff;
+      white-space: nowrap;
+    }
+
+    .badge.inferred {
+      color: var(--warn);
+      border-color: #e2c189;
+      background: #fff4df;
+    }
+
+    .badge.root {
+      color: var(--root);
+      border-color: #c6bce6;
+      background: #f0ebff;
+    }
+
+    .badge.warn {
+      color: var(--danger);
+      border-color: #e6b7b3;
+      background: #fff0ef;
+    }
+
+    .badge.action {
+      color: #075f56;
+      border-color: #a8d6cc;
+      background: #edf9f6;
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge.more-action {
+      color: #4d6073;
+      border-color: #c9d3dd;
+      background: #f3f6f8;
+    }
+
+    .children {
+      margin-left: 21px;
+      padding-left: 13px;
+      border-left: 1px solid var(--line);
+      display: grid;
+      gap: 5px;
+      margin-top: 5px;
+    }
+
+    .more-row {
+      margin: 4px 0 2px 34px;
+    }
+
+    .details-body {
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .detail-title {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .detail-title strong {
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .kv {
+      display: grid;
+      gap: 7px;
+    }
+
+    .kv-row {
+      display: grid;
+      grid-template-columns: 104px 1fr;
+      gap: 10px;
+      align-items: start;
+      min-width: 0;
+    }
+
+    .kv-key {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .kv-value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .details-subhead {
+      font-size: 12px;
+      line-height: 1.2;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
+    .event-groups {
+      display: grid;
+      gap: 8px;
+    }
+
+    .event-group {
+      display: grid;
+      gap: 7px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px;
+      background: #fff;
+      min-width: 0;
+    }
+
+    .event-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .event-action {
+      font-weight: 700;
+      font-size: 13px;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .event-row-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      max-height: 180px;
+      overflow: auto;
+    }
+
+    .row-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border-radius: 6px;
+      border: 1px solid #cfd8e1;
+      background: #f8fafb;
+      padding: 0 6px;
+      font-size: 12px;
+      color: #293847;
+      cursor: pointer;
+    }
+
+    .row-chip:hover,
+    .row-chip.selected {
+      border-color: var(--accent);
+      background: #eef7fd;
+      color: var(--accent);
+    }
+
+    .raw-event {
+      display: grid;
+      gap: 8px;
+    }
+
+    .raw-field-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .raw-field {
+      display: grid;
+      grid-template-columns: minmax(112px, 38%) minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+      min-width: 0;
+    }
+
+    .raw-key {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .raw-key strong {
+      color: var(--text);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .raw-index {
+      color: var(--muted-2);
+      font-size: 11px;
+    }
+
+    .raw-value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .mono {
+      font-family: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+    }
+
+    .notice {
+      border: 1px solid #edd39f;
+      background: #fff7e7;
+      color: #684100;
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .notice.danger {
+      border-color: #edb8b3;
+      background: #fff0ef;
+      color: #771a14;
+    }
+
+
+    .term-highlight {
+      display: inline;
+      border-radius: 4px;
+      padding: 0 2px;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+      font-weight: 700;
+    }
+
+    .term-highlight.term-0,
+    .term-chip.term-0 {
+      background: #fff1a8;
+      color: #4a4100;
+    }
+
+    .term-highlight.term-1,
+    .term-chip.term-1 {
+      background: #c8f7c5;
+      color: #155724;
+    }
+
+    .term-highlight.term-2,
+    .term-chip.term-2 {
+      background: #cfe8ff;
+      color: #0b4f88;
+    }
+
+    .term-highlight.term-3,
+    .term-chip.term-3 {
+      background: #f7d0ff;
+      color: #7a1f87;
+    }
+
+    .term-highlight.term-4,
+    .term-chip.term-4 {
+      background: #ffd8b5;
+      color: #8a3d00;
+    }
+
+    .term-highlight.term-5,
+    .term-chip.term-5 {
+      background: #d9f2e6;
+      color: #0f5c46;
+    }
+
+    .term-highlight.term-6,
+    .term-chip.term-6 {
+      background: #ffd6de;
+      color: #8f1233;
+    }
+
+    .term-highlight.term-7,
+    .term-chip.term-7 {
+      background: #e3dcff;
+      color: #4f34a3;
+    }
+
+    .match-term-badges {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .term-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      line-height: 1;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      white-space: nowrap;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .split-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 1180px) {
+      .layout {
+        grid-template-columns: 340px 1fr;
+        grid-template-rows: minmax(0, 1fr) auto;
+      }
+
+      .details-resizer {
+        display: none;
+      }
+
+      .details {
+        grid-column: 1 / -1;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        max-height: min(360px, 38vh);
+      }
+
+      .details .panel-section {
+        min-height: 0;
+      }
+    }
+
+    @media (max-width: 820px) {
+      body {
+        overflow: auto;
+      }
+
+      .app {
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      h1 {
+        white-space: normal;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        height: auto;
+        overflow: visible;
+      }
+
+      .details-resizer {
+        display: none;
+      }
+
+      .sidebar,
+      .details {
+        border-right: 0;
+        border-left: 0;
+        max-height: none;
+        overflow: visible;
+      }
+
+      .tree-pane {
+        height: auto;
+        min-height: 620px;
+        overflow: visible;
+      }
+
+      .tree-scroll {
+        max-height: 70vh;
+      }
+
+      .tree-toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .search-row {
+        grid-template-columns: 1fr;
+      }
+
+      .field-row,
+      .kv-row,
+      .raw-field {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">PT</div>
+        <h1>MDE Process Tree Builder</h1>
+      </div>
+      <div class="top-actions">
+        <button class="button ghost" id="sampleButton" type="button" title="サンプルログで動作確認">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+          サンプル
+        </button>
+        <button class="button" id="exportCsvButton" type="button" disabled title="表示中のエッジをCSVで保存">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          Edge CSV
+        </button>
+        <button class="button" id="exportJsonButton" type="button" disabled title="表示中のツリーをJSONで保存">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          JSON
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="panel-section">
+          <h2>Import</h2>
+          <div class="file-drop" id="dropZone">
+            <input id="fileInput" type="file" accept=".csv,.tsv,.txt,.log,text/csv,text/tab-separated-values">
+            <div class="file-name" id="fileName">CSV / TSV形式のMDEログを選択</div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress" aria-label="解析進捗">
+              <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">待機中</div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2>Column Mapping</h2>
+          <div class="mapping-grid" id="mappingGrid"></div>
+          <p class="hint">列名から自動判定します。MDEの <span class="mono">FileName</span>、<span class="mono">ProcessId</span>、<span class="mono">InitiatingProcess*</span> と <span class="mono">InitiatingProcessParent*</span> 系を優先します。</p>
+        </section>
+
+        <section class="panel-section">
+          <h2>Settings</h2>
+          <div class="settings-grid">
+            <div class="field-row">
+              <label for="renderLimit">表示ノード上限</label>
+              <select id="renderLimit">
+                <option value="10000">10,000</option>
+                <option value="25000">25,000</option>
+                <option value="50000" selected>50,000</option>
+                <option value="100000">100,000</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label for="childLimit">子ノード初期表示</label>
+              <select id="childLimit">
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label for="encodingSelect">文字コード</label>
+              <select id="encodingSelect">
+                <option value="auto" selected>Auto</option>
+                <option value="utf-8">UTF-8</option>
+                <option value="shift-jis">Shift-JIS</option>
+                <option value="utf-16le">UTF-16 LE</option>
+                <option value="utf-16be">UTF-16 BE</option>
+              </select>
+            </div>
+            <label class="checkbox-row">
+              <input type="checkbox" id="includeUnknownRoot" checked>
+              <span>親情報なしをデバイス単位でまとめる</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="preferTimeInference" checked>
+              <span>PIDと時刻で実在親を推定する</span>
+            </label>
+          </div>
+          <div class="split-buttons" style="margin-top: 12px;">
+            <button class="button primary" id="analyzeButton" type="button" disabled>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9z"/></svg>
+              解析
+            </button>
+            <button class="button" id="cancelButton" type="button" disabled>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+              停止
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2>Stats</h2>
+          <div class="stat-grid" id="statsGrid">
+            <div class="stat"><span class="stat-value">0</span><span class="stat-caption">Rows</span></div>
+            <div class="stat"><span class="stat-value">0</span><span class="stat-caption">Nodes</span></div>
+            <div class="stat"><span class="stat-value">0</span><span class="stat-caption">Inferred</span></div>
+            <div class="stat"><span class="stat-value">0</span><span class="stat-caption">Roots</span></div>
+          </div>
+          <div class="status-list" id="warnings" style="margin-top: 10px;"></div>
+        </section>
+      </aside>
+
+      <main class="tree-pane">
+        <section class="tree-head">
+          <h2>Tree</h2>
+          <div class="tree-toolbar">
+            <div class="search-stack">
+              <textarea id="searchInput" rows="2" placeholder="検索語を改行 / , / ; 区切りで複数入力" disabled></textarea>
+              <div class="search-row">
+                <select id="searchMode" disabled title="検索条件">
+                  <option value="or" selected>OR: いずれか一致</option>
+                  <option value="and">AND: すべて一致</option>
+                </select>
+                <div class="hint">対象: プロセス名 / PID / コマンドライン / デバイス / ユーザー</div>
+              </div>
+            </div>
+            <div class="tree-tools-group">
+              <button class="icon-button" id="expandButton" type="button" disabled title="全展開">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <button class="icon-button" id="collapseButton" type="button" disabled title="全折りたたみ">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
+              </button>
+            </div>
+            <select id="sortMode" disabled title="並び順">
+              <option value="time">初回観測時刻</option>
+              <option value="events">イベント数</option>
+              <option value="children">子孫数</option>
+              <option value="name">プロセス名</option>
+            </select>
+          </div>
+        </section>
+        <section class="tree-scroll" id="treeScroll">
+          <div class="empty">ログを読み込むとプロセスツリーを表示します。</div>
+        </section>
+      </main>
+
+      <div class="details-resizer" id="detailsResizer" role="separator" aria-label="Details width resize handle" aria-orientation="vertical" tabindex="0"></div>
+
+      <aside class="details" id="detailsPane">
+        <section class="panel-section">
+          <h2>Details</h2>
+          <div class="details-body" id="detailsBody">
+            <div class="empty">ノードを選択すると詳細を表示します。</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script id="worker-source" type="text/plain">
+    const FIELD_DEFS = [
+      { key: "timestamp", label: "イベント時刻" },
+      { key: "deviceName", label: "デバイス名" },
+      { key: "deviceId", label: "デバイスID" },
+      { key: "processUniqueId", label: "プロセス一意ID" },
+      { key: "processName", label: "プロセス名" },
+      { key: "processPid", label: "PID" },
+      { key: "processCreationTime", label: "プロセス作成時刻" },
+      { key: "processPath", label: "パス" },
+      { key: "processCommandLine", label: "コマンドライン" },
+      { key: "account", label: "アカウント" },
+      { key: "parentUniqueId", label: "親一意ID" },
+      { key: "parentName", label: "親プロセス名" },
+      { key: "parentPid", label: "親PID" },
+      { key: "parentCreationTime", label: "親作成時刻" },
+      { key: "parentPath", label: "親パス" },
+      { key: "parentCommandLine", label: "親コマンドライン" },
+      { key: "grandparentName", label: "親の親プロセス名" },
+      { key: "grandparentPid", label: "親の親PID" },
+      { key: "grandparentCreationTime", label: "親の親作成時刻" },
+      { key: "actionType", label: "ActionType" }
+    ];
+
+    function normalizeHeader(value) {
+      return String(value || "")
+        .trim()
+        .replace(/^\uFEFF/, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+    }
+
+    function stableHash(input) {
+      let hash = 2166136261;
+      for (let i = 0; i < input.length; i += 1) {
+        hash ^= input.charCodeAt(i);
+        hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+      }
+      return (hash >>> 0).toString(36);
+    }
+
+    function compactTime(value) {
+      if (!value) return "";
+      const text = String(value).trim();
+      const ms = Date.parse(text);
+      if (Number.isFinite(ms)) return new Date(ms).toISOString();
+      return text;
+    }
+
+    function timeMs(value) {
+      if (!value) return NaN;
+      const ms = Date.parse(value);
+      return Number.isFinite(ms) ? ms : NaN;
+    }
+
+    function lower(value) {
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function clean(value) {
+      return String(value == null ? "" : value).trim();
+    }
+
+    function shortNameFromPath(path) {
+      const text = clean(path);
+      if (!text) return "";
+      const parts = text.split(/[\\/]/);
+      return parts[parts.length - 1] || text;
+    }
+
+    function pickBetter(current, incoming, preferLong) {
+      const next = clean(incoming);
+      if (!next) return current || "";
+      if (!current || /^\[(unknown|推定親|親不明)\]$/i.test(current)) return next;
+      if (preferLong) return next.length > current.length ? next : current;
+      return current;
+    }
+
+    function makeDevice(row, map) {
+      const name = clean(row[map.deviceName]);
+      const id = clean(row[map.deviceId]);
+      return {
+        name,
+        id,
+        key: id || name || "unknown-device",
+        label: name || id || "unknown device"
+      };
+    }
+
+    function makeProcessKey(deviceKey, values) {
+      if (values.uniqueId) return `${deviceKey}|uid|${values.uniqueId}`;
+      if (values.pid && values.creationTime) return `${deviceKey}|pidct|${values.pid}|${compactTime(values.creationTime)}`;
+      if (values.pid && values.name && values.commandLine) {
+        return `${deviceKey}|pidsig|${values.pid}|${lower(values.name)}|${stableHash(lower(values.commandLine))}`;
+      }
+      if (values.pid && values.name && values.path) {
+        return `${deviceKey}|pidsig|${values.pid}|${lower(values.name)}|${stableHash(lower(values.path))}`;
+      }
+      if (values.pid && values.name) return `${deviceKey}|pidname|${values.pid}|${lower(values.name)}`;
+      const signature = [values.name, values.path, values.commandLine, values.timestamp].map(lower).join("|");
+      return `${deviceKey}|sig|${stableHash(signature)}`;
+    }
+
+    function makeParentSignature(deviceKey, parent) {
+      if (parent.uniqueId) return `${deviceKey}|uid|${parent.uniqueId}`;
+      if (parent.pid && parent.creationTime) return `${deviceKey}|pidct|${parent.pid}|${compactTime(parent.creationTime)}`;
+      if (parent.pid && parent.name && parent.commandLine) {
+        return `${deviceKey}|infer|${parent.pid}|${lower(parent.name)}|${stableHash(lower(parent.commandLine))}`;
+      }
+      if (parent.pid && parent.name && parent.path) {
+        return `${deviceKey}|infer|${parent.pid}|${lower(parent.name)}|${stableHash(lower(parent.path))}`;
+      }
+      if (parent.pid && parent.name) return `${deviceKey}|infer|${parent.pid}|${lower(parent.name)}`;
+      if (parent.pid) return `${deviceKey}|infer-pid|${parent.pid}`;
+      if (parent.name) return `${deviceKey}|infer-name|${lower(parent.name)}|${stableHash(lower(parent.commandLine || parent.path))}`;
+      return `${deviceKey}|unknown-parent`;
+    }
+
+    function createNode(id, key, values, inferred) {
+      const name = values.name || shortNameFromPath(values.path) || (inferred ? "[推定親]" : "[unknown]");
+      return {
+        id,
+        key,
+        deviceKey: values.deviceKey || "",
+        deviceLabel: values.deviceLabel || "",
+        deviceId: values.deviceId || "",
+        name,
+        pid: values.pid || "",
+        uniqueId: values.uniqueId || "",
+        creationTime: compactTime(values.creationTime || ""),
+        firstSeen: compactTime(values.timestamp || values.creationTime || ""),
+        lastSeen: compactTime(values.timestamp || values.creationTime || ""),
+        path: values.path || "",
+        commandLine: values.commandLine || "",
+        account: values.account || "",
+        eventCount: inferred ? 0 : 1,
+        actionTypes: Object.create(null),
+        eventRowsByAction: Object.create(null),
+        parentCandidate: null,
+        parentId: null,
+        parentConfidence: 0,
+        parentReason: "",
+        inferred: Boolean(inferred),
+        rootGroup: false,
+        missing: Boolean(inferred),
+        children: [],
+        childCount: 0,
+        descendantCount: 0,
+        displayIndex: id
+      };
+    }
+
+    function updateNode(node, values) {
+      node.name = pickBetter(node.name, values.name || shortNameFromPath(values.path), false) || node.name;
+      node.pid = pickBetter(node.pid, values.pid, false);
+      node.uniqueId = pickBetter(node.uniqueId, values.uniqueId, false);
+      node.creationTime = pickBetter(node.creationTime, compactTime(values.creationTime), false);
+      node.path = pickBetter(node.path, values.path, true);
+      node.commandLine = pickBetter(node.commandLine, values.commandLine, true);
+      node.account = pickBetter(node.account, values.account, false);
+      node.deviceLabel = pickBetter(node.deviceLabel, values.deviceLabel, false);
+      node.deviceId = pickBetter(node.deviceId, values.deviceId, false);
+      const ts = compactTime(values.timestamp);
+      if (ts) {
+        if (!node.firstSeen || timeMs(ts) < timeMs(node.firstSeen)) node.firstSeen = ts;
+        if (!node.lastSeen || timeMs(ts) > timeMs(node.lastSeen)) node.lastSeen = ts;
+      }
+      if (!node.inferred) node.eventCount += 1;
+    }
+
+    function recordNodeEvent(node, values, rowNumber) {
+      if (node.inferred) return;
+      const actionType = values.actionType || "(ActionTypeなし)";
+      node.actionTypes[actionType] = (node.actionTypes[actionType] || 0) + 1;
+      if (!node.eventRowsByAction[actionType]) node.eventRowsByAction[actionType] = [];
+      node.eventRowsByAction[actionType].push(rowNumber);
+    }
+
+    function createCsvParser(delimiter, onRow) {
+      let field = "";
+      let row = [];
+      let inQuotes = false;
+      let quotePending = false;
+
+      function endField() {
+        row.push(field);
+        field = "";
+      }
+
+      function endRow() {
+        endField();
+        onRow(row);
+        row = [];
+      }
+
+      function processChar(c) {
+        if (inQuotes) {
+          if (quotePending) {
+            if (c === '"') {
+              field += '"';
+              quotePending = false;
+              return;
+            }
+            inQuotes = false;
+            quotePending = false;
+          } else if (c === '"') {
+            quotePending = true;
+            return;
+          } else {
+            field += c;
+            return;
+          }
+        }
+
+        if (c === '"') {
+          if (!field) inQuotes = true;
+          else field += c;
+        } else if (c === delimiter) {
+          endField();
+        } else if (c === "\n") {
+          endRow();
+        } else if (c === "\r") {
+          return;
+        } else {
+          field += c;
+        }
+      }
+
+      return {
+        push(text) {
+          for (let i = 0; i < text.length; i += 1) processChar(text[i]);
+        },
+        finish() {
+          if (quotePending) quotePending = false;
+          if (field.length || row.length) endRow();
+        }
+      };
+    }
+
+    function rowValue(row, index) {
+      return Number.isInteger(index) && index >= 0 ? clean(row[index]) : "";
+    }
+
+    function eventValues(row, map) {
+      const device = makeDevice(row, map);
+      return {
+        deviceKey: device.key,
+        deviceLabel: device.label,
+        deviceId: device.id,
+        timestamp: rowValue(row, map.timestamp),
+        uniqueId: rowValue(row, map.processUniqueId),
+        name: rowValue(row, map.processName),
+        pid: rowValue(row, map.processPid),
+        creationTime: rowValue(row, map.processCreationTime),
+        path: rowValue(row, map.processPath),
+        commandLine: rowValue(row, map.processCommandLine),
+        account: rowValue(row, map.account),
+        actionType: rowValue(row, map.actionType)
+      };
+    }
+
+    function parentValues(row, map, childValues) {
+      const parent = {
+        deviceKey: childValues.deviceKey,
+        deviceLabel: childValues.deviceLabel,
+        deviceId: childValues.deviceId,
+        timestamp: childValues.timestamp,
+        uniqueId: rowValue(row, map.parentUniqueId),
+        name: rowValue(row, map.parentName),
+        pid: rowValue(row, map.parentPid),
+        creationTime: rowValue(row, map.parentCreationTime),
+        path: rowValue(row, map.parentPath),
+        commandLine: rowValue(row, map.parentCommandLine),
+        account: ""
+      };
+      if (!parent.name && parent.path) parent.name = shortNameFromPath(parent.path);
+      return parent;
+    }
+
+    function ancestorValues(row, map, childValues) {
+      return {
+        deviceKey: childValues.deviceKey,
+        deviceLabel: childValues.deviceLabel,
+        deviceId: childValues.deviceId,
+        timestamp: childValues.timestamp,
+        uniqueId: "",
+        name: rowValue(row, map.grandparentName),
+        pid: rowValue(row, map.grandparentPid),
+        creationTime: rowValue(row, map.grandparentCreationTime),
+        path: "",
+        commandLine: "",
+        account: ""
+      };
+    }
+
+    function hasParentInfo(parent) {
+      return Boolean(parent.uniqueId || parent.pid || parent.name || parent.path || parent.commandLine);
+    }
+
+    function hasChildIdentity(values) {
+      return Boolean(values.uniqueId || values.pid || values.name || values.path || values.commandLine);
+    }
+
+    function addToIndex(index, key, nodeId) {
+      if (!key) return;
+      let bucket = index.get(key);
+      if (!bucket) {
+        bucket = [];
+        index.set(key, bucket);
+      }
+      bucket.push(nodeId);
+    }
+
+    function buildIndexes(nodes) {
+      const byPid = new Map();
+      for (const node of nodes) {
+        if (node.inferred || node.rootGroup || !node.pid) continue;
+        const key = `${node.deviceKey}|${node.pid}`;
+        addToIndex(byPid, key, node.id);
+      }
+      for (const ids of byPid.values()) {
+        ids.sort((a, b) => {
+          const am = timeMs(nodes[a].creationTime || nodes[a].firstSeen);
+          const bm = timeMs(nodes[b].creationTime || nodes[b].firstSeen);
+          return (Number.isFinite(am) ? am : 0) - (Number.isFinite(bm) ? bm : 0);
+        });
+      }
+      return { byPid };
+    }
+
+    function chooseParentByTime(nodes, byPid, child, parent) {
+      if (!parent.pid) return null;
+      const ids = byPid.get(`${child.deviceKey}|${parent.pid}`);
+      if (!ids || !ids.length) return null;
+      const childTime = timeMs(child.creationTime || child.firstSeen);
+      let best = null;
+      let bestDelta = Infinity;
+      for (const id of ids) {
+        if (id === child.id) continue;
+        const candidate = nodes[id];
+        const candidateName = lower(candidate.name);
+        if (parent.name && candidateName && candidateName !== lower(parent.name)) continue;
+        const candidateTime = timeMs(candidate.creationTime || candidate.firstSeen);
+        if (Number.isFinite(childTime) && Number.isFinite(candidateTime) && candidateTime > childTime) continue;
+        const delta = Number.isFinite(childTime) && Number.isFinite(candidateTime)
+          ? Math.abs(childTime - candidateTime)
+          : 0;
+        if (delta < bestDelta) {
+          best = candidate;
+          bestDelta = delta;
+        }
+      }
+      return best;
+    }
+
+    function wouldCreateCycle(nodes, childId, parentId) {
+      let current = parentId;
+      const seen = new Set([childId]);
+      while (current != null) {
+        if (seen.has(current)) return true;
+        seen.add(current);
+        current = nodes[current] ? nodes[current].parentId : null;
+      }
+      return false;
+    }
+
+    function attach(nodes, child, parent, confidence, reason) {
+      if (!parent || child.id === parent.id) return false;
+      if (wouldCreateCycle(nodes, child.id, parent.id)) return false;
+      child.parentId = parent.id;
+      child.parentConfidence = confidence;
+      child.parentReason = reason;
+      parent.children.push(child.id);
+      return true;
+    }
+
+    function ensureInferredNode(state, signature, values, rootGroup, parentCandidate) {
+      let id = state.keyToId.get(signature);
+      if (id != null) {
+        const existing = state.nodes[id];
+        updateNode(existing, values);
+        if (parentCandidate && hasParentInfo(parentCandidate) && (!existing.parentCandidate || parentCandidate.uniqueId || parentCandidate.creationTime)) {
+          existing.parentCandidate = parentCandidate;
+        }
+        return existing;
+      }
+      id = state.nodes.length;
+      const node = createNode(id, signature, values, true);
+      node.rootGroup = Boolean(rootGroup);
+      node.eventCount = 0;
+      if (parentCandidate && hasParentInfo(parentCandidate)) node.parentCandidate = parentCandidate;
+      node.parentReason = rootGroup ? "親情報なしの集約" : "子孫または関連イベントから存在を推定";
+      state.nodes.push(node);
+      state.keyToId.set(signature, id);
+      state.inferredCount += 1;
+      return node;
+    }
+
+    function resolveParents(state, options) {
+      const { nodes, keyToId } = state;
+      const { byPid } = buildIndexes(nodes);
+
+      for (let index = 0; index < nodes.length; index += 1) {
+        const child = nodes[index];
+        if (child.rootGroup || child.parentId != null || !child.parentCandidate) continue;
+        const parent = child.parentCandidate;
+        let attached = false;
+
+        const directSignature = makeParentSignature(child.deviceKey, parent);
+        const directId = keyToId.get(directSignature);
+        if (directId != null) {
+          attached = attach(nodes, child, nodes[directId], parent.uniqueId ? 0.98 : 0.92, parent.uniqueId ? "一意ID一致" : "PIDと作成時刻一致");
+        }
+
+        if (!attached && options.preferTimeInference) {
+          const candidate = chooseParentByTime(nodes, byPid, child, parent);
+          if (candidate) attached = attach(nodes, child, candidate, 0.68, "PID、親名、時刻から推定");
+        }
+
+        if (!attached && hasParentInfo(parent)) {
+          const inferred = ensureInferredNode(state, directSignature, parent, false, parent.parentCandidate || null);
+          attached = attach(nodes, child, inferred, parent.pid || parent.name ? 0.48 : 0.32, child.inferred ? "欠落した中間プロセスを補完" : "ログ外の親を集約");
+        }
+
+        if (!attached && options.includeUnknownRoot) {
+          const unknown = ensureInferredNode(state, `${child.deviceKey}|unknown-parent`, {
+            deviceKey: child.deviceKey,
+            deviceLabel: child.deviceLabel,
+            deviceId: child.deviceId,
+            name: "[親不明]",
+            timestamp: child.firstSeen
+          }, true, null);
+          attach(nodes, child, unknown, 0.12, "親情報なし");
+        }
+      }
+
+      if (options.includeUnknownRoot) {
+        for (const child of nodes) {
+          if (child.parentId != null || child.rootGroup) continue;
+          const unknown = ensureInferredNode(state, `${child.deviceKey}|unknown-parent`, {
+            deviceKey: child.deviceKey,
+            deviceLabel: child.deviceLabel,
+            deviceId: child.deviceId,
+            name: "[親不明]",
+            timestamp: child.firstSeen
+          }, true, null);
+          attach(nodes, child, unknown, 0.12, "ログ開始前または親情報なし");
+        }
+      }
+    }
+
+    function computeCounts(nodes) {
+      for (const node of nodes) {
+        node.childCount = node.children.length;
+        node.children.sort((a, b) => {
+          const an = nodes[a];
+          const bn = nodes[b];
+          const at = timeMs(an.firstSeen);
+          const bt = timeMs(bn.firstSeen);
+          if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+          return an.displayIndex - bn.displayIndex;
+        });
+      }
+
+      const memo = new Map();
+      function visit(id, stack) {
+        if (memo.has(id)) return memo.get(id);
+        if (stack.has(id)) return 0;
+        stack.add(id);
+        let total = 0;
+        for (const childId of nodes[id].children) total += 1 + visit(childId, stack);
+        stack.delete(id);
+        nodes[id].descendantCount = total;
+        memo.set(id, total);
+        return total;
+      }
+
+      for (const node of nodes) visit(node.id, new Set());
+    }
+
+    function sortRoots(nodes, roots) {
+      return roots.sort((a, b) => {
+        const an = nodes[a];
+        const bn = nodes[b];
+        const ar = an.rootGroup ? 0 : 1;
+        const br = bn.rootGroup ? 0 : 1;
+        if (ar !== br) return ar - br;
+        const at = timeMs(an.firstSeen);
+        const bt = timeMs(bn.firstSeen);
+        if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+        return an.name.localeCompare(bn.name);
+      });
+    }
+
+    function pruneGraph(nodes, roots, maxNodes) {
+      if (nodes.length <= maxNodes) {
+        return { nodes, roots, truncated: false, originalNodeCount: nodes.length };
+      }
+
+      const keep = new Set();
+      const queue = [...roots];
+      while (queue.length && keep.size < maxNodes) {
+        const id = queue.shift();
+        if (keep.has(id)) continue;
+        keep.add(id);
+        const children = [...nodes[id].children].sort((a, b) => {
+          const av = nodes[a].descendantCount + nodes[a].eventCount;
+          const bv = nodes[b].descendantCount + nodes[b].eventCount;
+          if (av !== bv) return bv - av;
+          return nodes[a].displayIndex - nodes[b].displayIndex;
+        });
+        for (const childId of children) {
+          if (keep.size + queue.length >= maxNodes * 2) break;
+          queue.push(childId);
+        }
+      }
+
+      const idMap = new Map();
+      const compact = [];
+      for (const id of keep) {
+        idMap.set(id, compact.length);
+        compact.push({ ...nodes[id], children: [] });
+      }
+
+      for (const oldId of keep) {
+        const next = compact[idMap.get(oldId)];
+        next.parentId = nodes[oldId].parentId != null && idMap.has(nodes[oldId].parentId)
+          ? idMap.get(nodes[oldId].parentId)
+          : null;
+        next.children = nodes[oldId].children.filter((id) => idMap.has(id)).map((id) => idMap.get(id));
+        next.childCount = nodes[oldId].childCount;
+      }
+
+      const compactRoots = roots.filter((id) => idMap.has(id)).map((id) => idMap.get(id));
+      for (const node of compact) node.id = idMap.get(node.displayIndex) ?? node.id;
+
+      return {
+        nodes: compact.map((node, index) => ({ ...node, id: index })),
+        roots: compactRoots,
+        truncated: true,
+        originalNodeCount: nodes.length
+      };
+    }
+
+    function publicNode(node) {
+      return {
+        id: node.id,
+        parentId: node.parentId,
+        name: node.name,
+        pid: node.pid,
+        uniqueId: node.uniqueId,
+        creationTime: node.creationTime,
+        firstSeen: node.firstSeen,
+        lastSeen: node.lastSeen,
+        path: node.path,
+        commandLine: node.commandLine,
+        account: node.account,
+        deviceLabel: node.deviceLabel,
+        deviceId: node.deviceId,
+        eventCount: node.eventCount,
+        actionTypes: node.actionTypes,
+        eventRowsByAction: node.eventRowsByAction,
+        children: node.children,
+        childCount: node.childCount,
+        descendantCount: node.descendantCount,
+        inferred: node.inferred,
+        rootGroup: node.rootGroup,
+        parentConfidence: node.parentConfidence,
+        parentReason: node.parentReason
+      };
+    }
+
+    async function analyze(file, config) {
+      const map = config.mapping;
+      const options = config.options;
+      const state = {
+        nodes: [],
+        keyToId: new Map(),
+        rows: 0,
+        skippedRows: 0,
+        inferredCount: 0,
+        lastProgressAt: 0
+      };
+      let headerSkipped = false;
+      let bytesRead = 0;
+
+      function onRow(row) {
+        if (!headerSkipped) {
+          headerSkipped = true;
+          return;
+        }
+        state.rows += 1;
+        const sourceRowNumber = state.rows + 1;
+        const values = eventValues(row, map);
+        if (!hasChildIdentity(values)) {
+          state.skippedRows += 1;
+          return;
+        }
+
+        const key = makeProcessKey(values.deviceKey, values);
+        let nodeId = state.keyToId.get(key);
+        let node;
+        if (nodeId == null) {
+          nodeId = state.nodes.length;
+          node = createNode(nodeId, key, values, false);
+          node.eventCount = 0;
+          state.nodes.push(node);
+          state.keyToId.set(key, nodeId);
+        } else {
+          node = state.nodes[nodeId];
+        }
+        updateNode(node, values);
+        recordNodeEvent(node, values, sourceRowNumber);
+
+        const parent = parentValues(row, map, values);
+        if (hasParentInfo(parent)) {
+          const ancestor = ancestorValues(row, map, values);
+          if (hasParentInfo(ancestor)) parent.parentCandidate = ancestor;
+          if (!node.parentCandidate || parent.uniqueId || parent.creationTime) {
+            node.parentCandidate = parent;
+          }
+        }
+      }
+
+      const decoder = new TextDecoder(config.encoding || "utf-8", { fatal: false });
+      const parser = createCsvParser(config.delimiter, onRow);
+      const reader = file.stream().getReader();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        bytesRead += value.byteLength;
+        parser.push(decoder.decode(value, { stream: true }));
+        const now = Date.now();
+        if (now - state.lastProgressAt > 220) {
+          state.lastProgressAt = now;
+          self.postMessage({
+            type: "progress",
+            bytesRead,
+            totalBytes: file.size,
+            rows: state.rows,
+            nodes: state.nodes.length
+          });
+        }
+      }
+      parser.push(decoder.decode());
+      parser.finish();
+
+      resolveParents(state, options);
+      computeCounts(state.nodes);
+
+      let roots = [];
+      for (const node of state.nodes) {
+        if (node.parentId == null) roots.push(node.id);
+      }
+      roots = sortRoots(state.nodes, roots);
+
+      const pruned = pruneGraph(state.nodes, roots, options.renderLimit);
+      const stats = {
+        rows: state.rows,
+        skippedRows: state.skippedRows,
+        nodes: pruned.nodes.length,
+        originalNodes: pruned.originalNodeCount,
+        inferredNodes: pruned.nodes.filter((node) => node.inferred).length,
+        roots: pruned.roots.length,
+        truncated: pruned.truncated
+      };
+
+      return {
+        type: "result",
+        nodes: pruned.nodes.map(publicNode),
+        roots: pruned.roots,
+        stats,
+        warnings: [
+          ...(state.skippedRows ? [`プロセス識別に必要な列が空の行を ${state.skippedRows.toLocaleString()} 行スキップしました。`] : []),
+          ...(pruned.truncated ? [`表示ノード上限により ${pruned.originalNodeCount.toLocaleString()} ノードから ${pruned.nodes.length.toLocaleString()} ノードへ絞り込みました。上限を増やすとより多く表示できます。`] : [])
+        ]
+      };
+    }
+
+    async function readSourceRow(file, config) {
+      const targetRowNumber = Number(config.rowNumber);
+      if (!Number.isFinite(targetRowNumber) || targetRowNumber < 1) {
+        throw new Error("行番号が不正です。");
+      }
+
+      let physicalRow = 0;
+      let headers = [];
+      let found = null;
+      let bytesRead = 0;
+
+      function onRow(row) {
+        physicalRow += 1;
+        if (physicalRow === 1) {
+          headers = row.map((header) => clean(header).replace(/^\uFEFF/, ""));
+        }
+        if (physicalRow === targetRowNumber) {
+          found = row;
+        }
+      }
+
+      const decoder = new TextDecoder(config.encoding || "utf-8", { fatal: false });
+      const parser = createCsvParser(config.delimiter, onRow);
+      const reader = file.stream().getReader();
+
+      while (!found) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        bytesRead += value.byteLength;
+        parser.push(decoder.decode(value, { stream: true }));
+        if (found) {
+          await reader.cancel();
+          break;
+        }
+      }
+
+      if (!found) {
+        parser.push(decoder.decode());
+        parser.finish();
+      }
+
+      if (!found) {
+        throw new Error(`行 ${targetRowNumber.toLocaleString()} が見つかりませんでした。`);
+      }
+
+      const width = Math.max(headers.length, found.length);
+      const columns = [];
+      for (let index = 0; index < width; index += 1) {
+        columns.push({
+          index: index + 1,
+          name: headers[index] || `Column ${index + 1}`,
+          value: found[index] == null ? "" : String(found[index])
+        });
+      }
+
+      return {
+        type: "rowResult",
+        rowNumber: targetRowNumber,
+        bytesRead,
+        columns
+      };
+    }
+
+    self.onmessage = async (event) => {
+      const message = event.data;
+      try {
+        let result = null;
+        if (message.type === "analyze") {
+          result = await analyze(message.file, message.config);
+        } else if (message.type === "readRow") {
+          result = await readSourceRow(message.file, message.config);
+        } else {
+          return;
+        }
+        self.postMessage(result);
+      } catch (error) {
+        self.postMessage({
+          type: message.type === "readRow" ? "rowError" : "error",
+          rowNumber: message.config && message.config.rowNumber,
+          message: error && error.message ? error.message : String(error)
+        });
+      }
+    };
+  </script>
+
+  <script>
+    const FIELD_DEFS = [
+      { key: "timestamp", label: "イベント時刻", required: false },
+      { key: "deviceName", label: "デバイス名", required: false },
+      { key: "deviceId", label: "デバイスID", required: false },
+      { key: "processUniqueId", label: "プロセス一意ID", required: false },
+      { key: "processName", label: "プロセス名", required: true },
+      { key: "processPid", label: "PID", required: false },
+      { key: "processCreationTime", label: "プロセス作成時刻", required: false },
+      { key: "processPath", label: "パス", required: false },
+      { key: "processCommandLine", label: "コマンドライン", required: false },
+      { key: "account", label: "アカウント", required: false },
+      { key: "parentUniqueId", label: "親一意ID", required: false },
+      { key: "parentName", label: "親プロセス名", required: false },
+      { key: "parentPid", label: "親PID", required: false },
+      { key: "parentCreationTime", label: "親作成時刻", required: false },
+      { key: "parentPath", label: "親パス", required: false },
+      { key: "parentCommandLine", label: "親コマンドライン", required: false },
+      { key: "grandparentName", label: "親の親プロセス名", required: false },
+      { key: "grandparentPid", label: "親の親PID", required: false },
+      { key: "grandparentCreationTime", label: "親の親作成時刻", required: false },
+      { key: "actionType", label: "ActionType", required: false }
+    ];
+
+    const CANDIDATES = {
+      timestamp: [
+        "timestamp", "eventtime", "timegenerated", "eventtimestamp", "createdtime", "reporttime"
+      ],
+      deviceName: [
+        "devicename", "computername", "hostname", "host", "machinename", "endpointname"
+      ],
+      deviceId: [
+        "deviceid", "machineid", "endpointid", "aaddeviceid"
+      ],
+      processUniqueId: [
+        "processuniqueid", "processguid", "processentityid", "processentityuniqueid"
+      ],
+      processName: [
+        "filename", "processfilename", "processname", "imagename", "image", "file_name", "newprocessname"
+      ],
+      processPid: [
+        "processid", "pid", "newprocessid", "targetprocessid"
+      ],
+      processCreationTime: [
+        "processcreationtime", "processstarttime", "starttime", "creationtime", "processcreatedtime"
+      ],
+      processPath: [
+        "folderpath", "processfolderpath", "processpath", "imagepath", "filepath", "newprocesspath"
+      ],
+      processCommandLine: [
+        "processcommandline", "commandline", "cmdline", "processcmdline", "newprocesscommandline"
+      ],
+      account: [
+        "accountname", "accountupn", "accountsid", "initiatingprocessaccountname", "username", "user", "subjectusername"
+      ],
+      parentUniqueId: [
+        "initiatingprocessuniqueid", "parentprocessuniqueid", "parentprocessguid", "initiatingprocessguid"
+      ],
+      parentName: [
+        "initiatingprocessfilename", "parentprocessfilename", "parentprocessname", "parentimagename", "initiatingprocessname"
+      ],
+      parentPid: [
+        "initiatingprocessid", "parentprocessid", "ppid", "parentpid", "initiatingpid"
+      ],
+      parentCreationTime: [
+        "initiatingprocesscreationtime", "parentprocesscreationtime", "parentprocessstarttime", "initiatingprocessstarttime"
+      ],
+      parentPath: [
+        "initiatingprocessfolderpath", "parentprocessfolderpath", "parentprocesspath", "initiatingprocesspath", "parentimagepath"
+      ],
+      parentCommandLine: [
+        "initiatingprocesscommandline", "parentprocesscommandline", "parentcommandline", "parentcmdline"
+      ],
+      grandparentName: [
+        "initiatingprocessparentfilename", "initiatingprocessparentname", "grandparentprocessfilename", "grandparentprocessname"
+      ],
+      grandparentPid: [
+        "initiatingprocessparentid", "grandparentprocessid", "grandparentpid"
+      ],
+      grandparentCreationTime: [
+        "initiatingprocessparentcreationtime", "initiatingprocessparentstarttime", "grandparentprocesscreationtime"
+      ],
+      actionType: [
+        "actiontype", "eventtype", "operation", "eventname"
+      ]
+    };
+
+    const NEGATIVE_PREFIX = {
+      processUniqueId: ["initiating", "parent"],
+      processName: ["initiating", "parent"],
+      processPid: ["initiating", "parent"],
+      processCreationTime: ["initiating", "parent"],
+      processPath: ["initiating", "parent"],
+      processCommandLine: ["initiating", "parent"],
+      parentUniqueId: ["processuniqueid"],
+      parentName: ["filename"],
+      parentPid: ["processid"],
+      parentCreationTime: ["processcreationtime"],
+      parentPath: ["folderpath"],
+      parentCommandLine: ["processcommandline"],
+      grandparentName: ["initiatingprocessfilename", "filename"],
+      grandparentPid: ["initiatingprocessid", "processid"],
+      grandparentCreationTime: ["initiatingprocesscreationtime", "processcreationtime"]
+    };
+
+    const els = {
+      fileInput: document.getElementById("fileInput"),
+      fileName: document.getElementById("fileName"),
+      dropZone: document.getElementById("dropZone"),
+      mappingGrid: document.getElementById("mappingGrid"),
+      analyzeButton: document.getElementById("analyzeButton"),
+      cancelButton: document.getElementById("cancelButton"),
+      progressBar: document.getElementById("progressBar"),
+      progressText: document.getElementById("progressText"),
+      statsGrid: document.getElementById("statsGrid"),
+      warnings: document.getElementById("warnings"),
+      treeScroll: document.getElementById("treeScroll"),
+      detailsBody: document.getElementById("detailsBody"),
+      detailsResizer: document.getElementById("detailsResizer"),
+      detailsPane: document.getElementById("detailsPane"),
+      app: document.querySelector(".app"),
+      layout: document.querySelector(".layout"),
+      searchInput: document.getElementById("searchInput"),
+      searchMode: document.getElementById("searchMode"),
+      expandButton: document.getElementById("expandButton"),
+      collapseButton: document.getElementById("collapseButton"),
+      sortMode: document.getElementById("sortMode"),
+      renderLimit: document.getElementById("renderLimit"),
+      childLimit: document.getElementById("childLimit"),
+      encodingSelect: document.getElementById("encodingSelect"),
+      includeUnknownRoot: document.getElementById("includeUnknownRoot"),
+      preferTimeInference: document.getElementById("preferTimeInference"),
+      exportCsvButton: document.getElementById("exportCsvButton"),
+      exportJsonButton: document.getElementById("exportJsonButton"),
+      sampleButton: document.getElementById("sampleButton")
+    };
+
+    const state = {
+      file: null,
+      headers: [],
+      delimiter: ",",
+      encoding: "utf-8",
+      detectedEncoding: "utf-8",
+      mapping: {},
+      worker: null,
+      graph: null,
+      nodeById: new Map(),
+      expanded: new Set(),
+      selectedId: null,
+      detailEventLimit: 400,
+      selectedEventRow: null,
+      selectedEventData: null,
+      selectedEventLoading: false,
+      selectedEventError: "",
+      rowWorker: null,
+      rowRequestId: 0,
+      search: "",
+      visibleMatches: null,
+      childReveal: new Map(),
+      detailsWidth: 340
+    };
+
+    function normalizeHeader(value) {
+      return String(value || "")
+        .trim()
+        .replace(/^\uFEFF/, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes)) return "0 B";
+      const units = ["B", "KB", "MB", "GB"];
+      let size = bytes;
+      let unit = 0;
+      while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit += 1;
+      }
+      return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+    }
+
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function detailsResizeBounds() {
+      const layoutRect = els.layout.getBoundingClientRect();
+      const sidebarRect = els.layout.querySelector(".sidebar").getBoundingClientRect();
+      const splitterSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--splitter-size")) || 10;
+      const minWidth = 280;
+      const maxWidth = Math.max(minWidth, layoutRect.width - sidebarRect.width - splitterSize - 320);
+      return { minWidth, maxWidth };
+    }
+
+    function applyDetailsWidth(width) {
+      if (!els.detailsPane) return;
+      if (window.matchMedia("(max-width: 1180px)").matches) return;
+      const bounds = detailsResizeBounds();
+      state.detailsWidth = clamp(Number(width) || state.detailsWidth || 340, bounds.minWidth, bounds.maxWidth);
+      document.documentElement.style.setProperty("--details-width", `${state.detailsWidth}px`);
+    }
+
+    function resetDetailsWidth() {
+      state.detailsWidth = 340;
+      applyDetailsWidth(state.detailsWidth);
+    }
+
+    function beginDetailsResize(startX) {
+      if (!els.detailsResizer || window.matchMedia("(max-width: 1180px)").matches) return;
+      const startWidth = els.detailsPane.getBoundingClientRect().width;
+      els.app.classList.add("resizing");
+
+      function onMove(event) {
+        const delta = startX - event.clientX;
+        applyDetailsWidth(startWidth + delta);
+      }
+
+      function onUp() {
+        els.app.classList.remove("resizing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      }
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    }
+
+    function parseDelimitedLine(line, delimiter) {
+      const row = [];
+      let field = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i += 1) {
+        const c = line[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (line[i + 1] === '"') {
+              field += '"';
+              i += 1;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            field += c;
+          }
+        } else if (c === '"') {
+          inQuotes = true;
+        } else if (c === delimiter) {
+          row.push(field);
+          field = "";
+        } else {
+          field += c;
+        }
+      }
+      row.push(field);
+      return row;
+    }
+
+    function countDelimiter(line, delimiter) {
+      let count = 0;
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i += 1) {
+        const c = line[i];
+        if (c === '"') {
+          if (inQuotes && line[i + 1] === '"') i += 1;
+          else inQuotes = !inQuotes;
+        } else if (!inQuotes && c === delimiter) {
+          count += 1;
+        }
+      }
+      return count;
+    }
+
+    function detectDelimiter(text) {
+      const firstLine = text.split(/\r?\n/).find((line) => line.trim()) || "";
+      const candidates = [",", "\t", ";", "|"];
+      let best = ",";
+      let bestCount = -1;
+      for (const delimiter of candidates) {
+        const count = countDelimiter(firstLine, delimiter);
+        if (count > bestCount) {
+          best = delimiter;
+          bestCount = count;
+        }
+      }
+      return best;
+    }
+
+    function detectEncoding(bytes) {
+      if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return "utf-8";
+      if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) return "utf-16le";
+      if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) return "utf-16be";
+      try {
+        new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        return "utf-8";
+      } catch (error) {
+        return "shift-jis";
+      }
+    }
+
+    function decodeBytes(buffer, encoding) {
+      return new TextDecoder(encoding || "utf-8", { fatal: false }).decode(buffer);
+    }
+
+    function resolveEncoding(bytes) {
+      const selected = els.encodingSelect ? els.encodingSelect.value : "auto";
+      if (selected && selected !== "auto") return selected;
+      return detectEncoding(bytes);
+    }
+
+
+    function scoreHeader(fieldKey, normalizedHeader) {
+      if (!normalizedHeader) return -Infinity;
+      const negatives = NEGATIVE_PREFIX[fieldKey] || [];
+      for (const prefix of negatives) {
+        if (normalizedHeader.startsWith(prefix)) return -40;
+      }
+      const candidates = CANDIDATES[fieldKey] || [];
+      let best = -1;
+      for (const candidate of candidates) {
+        const normalizedCandidate = normalizeHeader(candidate);
+        if (normalizedHeader === normalizedCandidate) best = Math.max(best, 100);
+        else if (normalizedHeader.endsWith(normalizedCandidate)) best = Math.max(best, 80);
+        else if (normalizedHeader.includes(normalizedCandidate)) best = Math.max(best, 60);
+      }
+      return best;
+    }
+
+    function autoMap(headers) {
+      const normalized = headers.map(normalizeHeader);
+      const mapping = {};
+      const used = new Set();
+      for (const field of FIELD_DEFS) {
+        let bestIndex = -1;
+        let bestScore = 0;
+        normalized.forEach((header, index) => {
+          if (used.has(index)) return;
+          const score = scoreHeader(field.key, header);
+          if (score > bestScore) {
+            bestScore = score;
+            bestIndex = index;
+          }
+        });
+        mapping[field.key] = bestIndex >= 0 ? bestIndex : -1;
+        if (bestIndex >= 0) used.add(bestIndex);
+      }
+      return mapping;
+    }
+
+    function renderMapping() {
+      const options = [`<option value="-1">未使用</option>`]
+        .concat(state.headers.map((header, index) => `<option value="${index}">${escapeHtml(header || `(列 ${index + 1})`)}</option>`))
+        .join("");
+
+      els.mappingGrid.innerHTML = FIELD_DEFS.map((field) => {
+        const selected = state.mapping[field.key] ?? -1;
+        return `
+          <div class="field-row">
+            <label for="map-${field.key}">${escapeHtml(field.label)}${field.required ? " *" : ""}</label>
+            <select id="map-${field.key}" data-field="${field.key}">
+              ${options}
+            </select>
+          </div>
+        `;
+      }).join("");
+
+      for (const select of els.mappingGrid.querySelectorAll("select")) {
+        const field = select.dataset.field;
+        select.value = String(selectedIndex(state.mapping[field]));
+        select.addEventListener("change", () => {
+          state.mapping[field] = Number(select.value);
+          updateAnalyzeAvailability();
+        });
+      }
+      updateAnalyzeAvailability();
+    }
+
+    function selectedIndex(value) {
+      return Number.isInteger(value) ? value : -1;
+    }
+
+    function updateAnalyzeAvailability() {
+      const hasFile = Boolean(state.file);
+      const hasIdentity = ["processUniqueId", "processName", "processPid", "processPath", "processCommandLine"]
+        .some((key) => Number(state.mapping[key]) >= 0);
+      els.analyzeButton.disabled = !hasFile || !hasIdentity || Boolean(state.worker);
+    }
+
+    async function loadFile(file) {
+      state.file = file;
+      state.graph = null;
+      state.nodeById.clear();
+      state.expanded.clear();
+      state.selectedId = null;
+      resetSelectedEvent();
+      state.childReveal.clear();
+      els.fileName.textContent = `${file.name} (${formatBytes(file.size)})`;
+      setProgress(0, "ヘッダーを読み取り中");
+      const sampleBuffer = await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer();
+      const sampleBytes = new Uint8Array(sampleBuffer);
+      state.detectedEncoding = detectEncoding(sampleBytes);
+      state.encoding = resolveEncoding(sampleBytes);
+      const sample = decodeBytes(sampleBuffer, state.encoding);
+      state.delimiter = detectDelimiter(sample);
+      const firstLine = sample.split(/\r?\n/).find((line) => line.trim()) || "";
+      state.headers = parseDelimitedLine(firstLine, state.delimiter).map((header) => header.trim().replace(/^\uFEFF/, ""));
+      state.mapping = autoMap(state.headers);
+      renderMapping();
+      clearResult();
+      const encodingLabel = els.encodingSelect && els.encodingSelect.value === "auto"
+        ? `${state.encoding} (auto)`
+        : state.encoding;
+      setProgress(0, `${state.headers.length} 列を検出 / 区切り文字: ${state.delimiter === "\t" ? "TAB" : state.delimiter} / ${encodingLabel}`);
+    }
+
+    function setProgress(percent, text) {
+      els.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+      els.progressText.textContent = text;
+    }
+
+    function resetSelectedEvent() {
+      state.rowRequestId += 1;
+      state.selectedEventRow = null;
+      state.selectedEventData = null;
+      state.selectedEventLoading = false;
+      state.selectedEventError = "";
+      if (state.rowWorker) {
+        state.rowWorker.terminate();
+        if (state.rowWorker.revokeObjectUrl) state.rowWorker.revokeObjectUrl();
+        state.rowWorker = null;
+      }
+    }
+
+    function clearResult() {
+      els.treeScroll.innerHTML = `<div class="empty">解析を開始するとプロセスツリーを表示します。</div>`;
+      els.detailsBody.innerHTML = `<div class="empty">ノードを選択すると詳細を表示します。</div>`;
+      resetSelectedEvent();
+      updateStats({ rows: 0, nodes: 0, inferredNodes: 0, roots: 0 });
+      els.warnings.innerHTML = "";
+      setGraphControls(false);
+    }
+
+    function setGraphControls(enabled) {
+      for (const el of [els.searchInput, els.searchMode, els.expandButton, els.collapseButton, els.sortMode, els.exportCsvButton, els.exportJsonButton]) {
+        el.disabled = !enabled;
+      }
+    }
+
+    function updateStats(stats) {
+      els.statsGrid.innerHTML = `
+        <div class="stat"><span class="stat-value">${formatNumber(stats.rows)}</span><span class="stat-caption">Rows</span></div>
+        <div class="stat"><span class="stat-value">${formatNumber(stats.nodes)}</span><span class="stat-caption">Nodes</span></div>
+        <div class="stat"><span class="stat-value">${formatNumber(stats.inferredNodes)}</span><span class="stat-caption">Inferred</span></div>
+        <div class="stat"><span class="stat-value">${formatNumber(stats.roots)}</span><span class="stat-caption">Roots</span></div>
+      `;
+    }
+
+    function showWarnings(warnings, stats) {
+      const messages = [...(warnings || [])];
+      if (stats && stats.truncated) {
+        messages.push("表示上限によって一部ノードは画面に返していません。大きなログでは上限を上げる前にブラウザのメモリに注意してください。");
+      }
+      els.warnings.innerHTML = messages.map((message) => `<div class="notice">${escapeHtml(message)}</div>`).join("");
+    }
+
+    function createWorker() {
+      const source = document.getElementById("worker-source").textContent;
+      const blob = new Blob([source], { type: "text/javascript" });
+      const url = URL.createObjectURL(blob);
+      const worker = new Worker(url);
+      let revoked = false;
+      const revoke = () => {
+        if (!revoked) {
+          URL.revokeObjectURL(url);
+          revoked = true;
+        }
+      };
+      worker.addEventListener("error", revoke, { once: true });
+      worker.addEventListener("message", (event) => {
+        if (["result", "error", "rowResult", "rowError"].includes(event.data.type)) revoke();
+      });
+      worker.revokeObjectUrl = revoke;
+      return worker;
+    }
+
+    function currentConfig() {
+      const mapping = {};
+      for (const field of FIELD_DEFS) mapping[field.key] = Number(state.mapping[field.key] ?? -1);
+      return {
+        delimiter: state.delimiter,
+        encoding: state.encoding,
+        mapping,
+        options: {
+          renderLimit: Number(els.renderLimit.value),
+          includeUnknownRoot: els.includeUnknownRoot.checked,
+          preferTimeInference: els.preferTimeInference.checked
+        }
+      };
+    }
+
+    function startAnalysis() {
+      if (!state.file || state.worker) return;
+      clearResult();
+      setProgress(0, "解析を開始しました");
+      els.analyzeButton.disabled = true;
+      els.cancelButton.disabled = false;
+
+      const worker = createWorker();
+      state.worker = worker;
+
+      worker.onmessage = (event) => {
+        const message = event.data;
+        if (message.type === "progress") {
+          const percent = message.totalBytes ? (message.bytesRead / message.totalBytes) * 100 : 0;
+          setProgress(percent, `${formatBytes(message.bytesRead)} / ${formatBytes(message.totalBytes)}、${formatNumber(message.rows)} 行、${formatNumber(message.nodes)} ノード`);
+        } else if (message.type === "result") {
+          finishAnalysis(message);
+        } else if (message.type === "error") {
+          failAnalysis(message.message);
+        }
+      };
+
+      worker.onerror = (error) => {
+        failAnalysis(error.message || "Worker error");
+      };
+
+      worker.postMessage({
+        type: "analyze",
+        file: state.file,
+        config: currentConfig()
+      });
+    }
+
+    function stopAnalysis() {
+      if (!state.worker) return;
+      state.worker.terminate();
+      state.worker = null;
+      els.cancelButton.disabled = true;
+      updateAnalyzeAvailability();
+      setProgress(0, "停止しました");
+    }
+
+    function failAnalysis(message) {
+      if (state.worker) {
+        state.worker.terminate();
+        state.worker = null;
+      }
+      els.cancelButton.disabled = true;
+      updateAnalyzeAvailability();
+      setProgress(0, "解析に失敗しました");
+      els.warnings.innerHTML = `<div class="notice danger">${escapeHtml(message)}</div>`;
+    }
+
+    function finishAnalysis(result) {
+      if (state.worker) {
+        state.worker.terminate();
+        state.worker = null;
+      }
+      els.cancelButton.disabled = true;
+      updateAnalyzeAvailability();
+      state.graph = result;
+      state.nodeById = new Map(result.nodes.map((node) => [node.id, node]));
+      state.expanded = new Set(result.roots);
+      state.selectedId = null;
+      state.childReveal.clear();
+      updateStats(result.stats);
+      showWarnings(result.warnings, result.stats);
+      setProgress(100, `${formatNumber(result.stats.rows)} 行を解析しました`);
+      setGraphControls(true);
+      renderTree();
+    }
+
+    function compareNodes(a, b, mode) {
+      if (mode === "events") {
+        if (a.eventCount !== b.eventCount) return b.eventCount - a.eventCount;
+      } else if (mode === "children") {
+        if (a.descendantCount !== b.descendantCount) return b.descendantCount - a.descendantCount;
+      } else if (mode === "name") {
+        return a.name.localeCompare(b.name);
+      } else {
+        const at = Date.parse(a.firstSeen);
+        const bt = Date.parse(b.firstSeen);
+        if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+      }
+      return a.id - b.id;
+    }
+
+    function nodeSearchText(node) {
+      return [
+        node.name,
+        node.pid,
+        node.uniqueId,
+        node.creationTime,
+        node.firstSeen,
+        node.path,
+        node.commandLine,
+        node.account,
+        node.deviceLabel,
+        node.deviceId,
+        node.parentReason,
+        Object.keys(node.actionTypes || {}).join(" ")
+      ].join(" ").toLowerCase();
+    }
+
+    function actionEntries(node) {
+      return Object.entries(node.actionTypes || {})
+        .filter(([, count]) => Number(count) > 0)
+        .sort((a, b) => {
+          if (b[1] !== a[1]) return b[1] - a[1];
+          return a[0].localeCompare(b[0]);
+        });
+    }
+
+    function renderActionBadges(node, limit) {
+      const entries = actionEntries(node);
+      if (!entries.length) return "";
+      const shown = entries.slice(0, limit).map(([name, count]) => {
+        const suffix = count > 1 ? ` ${formatNumber(count)}` : "";
+        return `<span class="badge action" title="ActionType: ${escapeHtml(name)}">${escapeHtml(name)}${suffix}</span>`;
+      });
+      if (entries.length > limit) {
+        shown.push(`<span class="badge more-action">+${formatNumber(entries.length - limit)}</span>`);
+      }
+      return shown.join("");
+    }
+
+    function actionSummaryText(node, limit) {
+      const entries = actionEntries(node);
+      if (!entries.length) return "";
+      const shown = entries.slice(0, limit).map(([name, count]) => `${name}${count > 1 ? ` x${formatNumber(count)}` : ""}`);
+      const hidden = entries.length - shown.length;
+      return `ActionType: ${shown.join(", ")}${hidden > 0 ? `, +${formatNumber(hidden)}` : ""}`;
+    }
+
+
+    function parseSearchTerms(raw) {
+      const seen = new Set();
+      return String(raw || "")
+        .split(/[\n,;]+/)
+        .map((term) => term.trim())
+        .filter(Boolean)
+        .filter((term) => {
+          const key = term.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    }
+
+    function nodeMatchesTerms(node, terms, mode) {
+      if (!terms.length) return true;
+      const haystack = nodeSearchText(node);
+      const normalizedTerms = terms.map((term) => term.toLowerCase());
+      if (mode === "and") return normalizedTerms.every((term) => haystack.includes(term));
+      return normalizedTerms.some((term) => haystack.includes(term));
+    }
+
+    function termClass(index) {
+      return `term-${index % 8}`;
+    }
+
+    function buildHighlightRanges(text, terms) {
+      const source = String(text || "");
+      if (!source || !terms || !terms.length) return [];
+      const lowerSource = source.toLowerCase();
+      const order = terms
+        .map((term, index) => ({ term, index, lower: term.toLowerCase() }))
+        .filter((entry) => entry.lower)
+        .sort((a, b) => b.lower.length - a.lower.length || a.index - b.index);
+      const owner = new Array(source.length).fill(-1);
+      for (const entry of order) {
+        let fromIndex = 0;
+        while (fromIndex < lowerSource.length) {
+          const found = lowerSource.indexOf(entry.lower, fromIndex);
+          if (found === -1) break;
+          const end = found + entry.lower.length;
+          let occupied = false;
+          for (let i = found; i < end; i += 1) {
+            if (owner[i] !== -1) {
+              occupied = true;
+              break;
+            }
+          }
+          if (!occupied) {
+            for (let i = found; i < end; i += 1) owner[i] = entry.index;
+          }
+          fromIndex = found + Math.max(1, entry.lower.length);
+        }
+      }
+      const ranges = [];
+      let start = -1;
+      let current = -1;
+      for (let i = 0; i < owner.length; i += 1) {
+        if (owner[i] !== current) {
+          if (current !== -1) ranges.push({ start, end: i, index: current });
+          current = owner[i];
+          start = current !== -1 ? i : -1;
+        }
+      }
+      if (current !== -1) ranges.push({ start, end: owner.length, index: current });
+      return ranges;
+    }
+
+    function highlightText(text, terms) {
+      const source = String(text || "");
+      if (!source) return "";
+      const ranges = buildHighlightRanges(source, terms);
+      if (!ranges.length) return escapeHtml(source);
+      const html = [];
+      let cursor = 0;
+      for (const range of ranges) {
+        if (cursor < range.start) html.push(escapeHtml(source.slice(cursor, range.start)));
+        html.push(`<mark class="term-highlight ${termClass(range.index)}">${escapeHtml(source.slice(range.start, range.end))}</mark>`);
+        cursor = range.end;
+      }
+      if (cursor < source.length) html.push(escapeHtml(source.slice(cursor)));
+      return html.join("");
+    }
+
+    function nodeMatchedTerms(node) {
+      if (!state.visibleMatches || !state.visibleMatches.terms || !state.visibleMatches.terms.length) return [];
+      const haystack = nodeSearchText(node);
+      return state.visibleMatches.terms.filter((term) => haystack.includes(term.toLowerCase()));
+    }
+
+    function renderMatchedTermBadges(node, limit) {
+      const matchedTerms = nodeMatchedTerms(node);
+      if (!matchedTerms.length) return "";
+      const shown = matchedTerms.slice(0, limit).map((term, index) => {
+        const originalIndex = state.visibleMatches.terms.findIndex((entry) => entry.toLowerCase() === term.toLowerCase());
+        return `<span class="term-chip ${termClass(originalIndex >= 0 ? originalIndex : index)}">${escapeHtml(term)}</span>`;
+      });
+      if (matchedTerms.length > limit) {
+        shown.push(`<span class="badge more-action">+${formatNumber(matchedTerms.length - limit)}</span>`);
+      }
+      return `<div class="match-term-badges">${shown.join("")}</div>`;
+    }
+
+    function buildVisibleMatches(query, mode) {
+      const terms = parseSearchTerms(query);
+      if (!terms.length) return null;
+      const matches = new Set();
+      const visible = new Set();
+      const expandedDescendants = new Set();
+      for (const node of state.graph.nodes) {
+        if (!nodeMatchesTerms(node, terms, mode)) continue;
+        matches.add(node.id);
+
+        let current = node;
+        while (current) {
+          visible.add(current.id);
+          current = current.parentId != null ? state.nodeById.get(current.parentId) : null;
+        }
+
+        const stack = [node.id];
+        while (stack.length) {
+          const currentId = stack.pop();
+          if (expandedDescendants.has(currentId)) continue;
+          expandedDescendants.add(currentId);
+          visible.add(currentId);
+          const currentNode = state.nodeById.get(currentId);
+          if (!currentNode) continue;
+          for (const childId of currentNode.children || []) stack.push(childId);
+        }
+      }
+      return { terms, mode, matches, visible };
+    }
+
+    function visibleChildren(node) {
+      const mode = els.sortMode.value;
+      let children = node.children.map((id) => state.nodeById.get(id)).filter(Boolean);
+      if (state.visibleMatches) children = children.filter((child) => state.visibleMatches.visible.has(child.id));
+      children.sort((a, b) => compareNodes(a, b, mode));
+      return children;
+    }
+
+    function renderTree() {
+      if (!state.graph) return;
+      state.search = els.searchInput.value.trim();
+      state.visibleMatches = buildVisibleMatches(state.search, els.searchMode.value);
+      const roots = state.graph.roots
+        .map((id) => state.nodeById.get(id))
+        .filter(Boolean)
+        .filter((node) => !state.visibleMatches || state.visibleMatches.visible.has(node.id))
+        .sort((a, b) => compareNodes(a, b, els.sortMode.value));
+
+      if (!roots.length) {
+        els.treeScroll.innerHTML = `<div class="empty">検索条件に一致するノードはありません。</div>`;
+        return;
+      }
+
+      const html = `<ul class="tree-root-list">${roots.map((node) => renderNode(node, 0)).join("")}</ul>`;
+      els.treeScroll.innerHTML = html;
+      bindTreeEvents();
+    }
+
+    function renderNode(node, depth) {
+      const children = visibleChildren(node);
+      const expandable = children.length > 0;
+      const isExpanded = state.expanded.has(node.id) || Boolean(state.visibleMatches);
+      const selected = state.selectedId === node.id;
+      const matched = state.visibleMatches && state.visibleMatches.matches.has(node.id);
+      const matchedTerms = matched ? nodeMatchedTerms(node) : [];
+      const rowClass = [
+        "node-row",
+        node.inferred ? "inferred" : "",
+        node.rootGroup ? "root" : "",
+        selected ? "selected" : ""
+      ].filter(Boolean).join(" ");
+      const confidence = node.parentConfidence ? `${Math.round(node.parentConfidence * 100)}%` : "";
+      const badges = [
+        node.rootGroup ? `<span class="badge root">集約</span>` : "",
+        node.inferred ? `<span class="badge inferred">推定</span>` : "",
+        matched ? `<span class="badge">match</span>` : "",
+        node.eventCount ? `<span class="badge">${formatNumber(node.eventCount)} evt</span>` : "",
+        renderActionBadges(node, 3),
+        children.length ? `<span class="badge">${formatNumber(node.childCount)} child</span>` : "",
+        confidence ? `<span class="badge">${confidence}</span>` : ""
+      ].filter(Boolean).join("");
+      const meta = [
+        node.deviceLabel,
+        node.pid ? `PID ${node.pid}` : "",
+        node.creationTime ? `created ${node.creationTime}` : "",
+        node.firstSeen ? `first ${node.firstSeen}` : ""
+      ].filter(Boolean).join(" / ");
+      const actionSummary = actionSummaryText(node, 6);
+      const sub = [actionSummary, node.commandLine || node.path || node.parentReason || ""].filter(Boolean).join(" | ");
+      const limit = Number(els.childLimit.value);
+      const reveal = state.childReveal.get(node.id) || limit;
+      const shown = children.slice(0, reveal);
+      const hiddenCount = Math.max(0, children.length - shown.length);
+      const childHtml = expandable && isExpanded
+        ? `<ul class="children">${shown.map((child) => renderNode(child, depth + 1)).join("")}</ul>${hiddenCount ? `<div class="more-row"><button class="button ghost" data-more="${node.id}" type="button">さらに ${formatNumber(Math.min(limit, hiddenCount))} 件表示</button></div>` : ""}`
+        : "";
+      return `
+        <li class="tree-node" data-id="${node.id}">
+          <div class="${rowClass}" data-select="${node.id}">
+            <button class="twisty" type="button" data-toggle="${node.id}" ${expandable ? "" : "disabled"} title="${isExpanded ? "折りたたみ" : "展開"}">
+              ${expandable ? (isExpanded ? "⌄" : "›") : ""}
+            </button>
+            <div class="node-main">
+              <div class="node-title">
+                <span class="proc-name">${highlightText(node.name, matchedTerms)}</span>
+              </div>
+              <div class="node-meta">${highlightText(meta || "no metadata", matchedTerms)}</div>
+              <div class="node-sub">${highlightText(sub, matchedTerms)}</div>
+              ${matched ? renderMatchedTermBadges(node, 6) : ""}
+            </div>
+            <div class="badges">${badges}</div>
+          </div>
+          ${childHtml}
+        </li>
+      `;
+    }
+
+    function bindTreeEvents() {
+      els.treeScroll.querySelectorAll("[data-toggle]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const id = Number(button.dataset.toggle);
+          if (state.expanded.has(id)) state.expanded.delete(id);
+          else state.expanded.add(id);
+          renderTree();
+        });
+      });
+      els.treeScroll.querySelectorAll("[data-select]").forEach((row) => {
+        row.addEventListener("click", () => {
+          const nextId = Number(row.dataset.select);
+          if (state.selectedId !== nextId) {
+            state.detailEventLimit = 400;
+            resetSelectedEvent();
+          }
+          state.selectedId = nextId;
+          renderDetails();
+          renderTree();
+        });
+      });
+      els.treeScroll.querySelectorAll("[data-more]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const id = Number(button.dataset.more);
+          const current = state.childReveal.get(id) || Number(els.childLimit.value);
+          state.childReveal.set(id, current + Number(els.childLimit.value));
+          renderTree();
+        });
+      });
+    }
+
+    function singleEventRow(node) {
+      const groups = node.eventRowsByAction || {};
+      let onlyRow = null;
+      let count = 0;
+      for (const rows of Object.values(groups)) {
+        for (const rowNumber of rows || []) {
+          onlyRow = rowNumber;
+          count += 1;
+          if (count > 1) return null;
+        }
+      }
+      return count === 1 ? onlyRow : null;
+    }
+
+    function renderEventRows(node) {
+      const groups = node.eventRowsByAction || {};
+      const entries = actionEntries(node);
+      const totalRows = entries.reduce((sum, [action]) => sum + ((groups[action] || []).length), 0);
+      if (!totalRows) {
+        return `
+          <div class="details-subhead">Event Rows</div>
+          <div class="notice">このノードに紐づくイベント行はありません。</div>
+        `;
+      }
+
+      let remaining = state.detailEventLimit;
+      let shownTotal = 0;
+      const html = [];
+      for (const [action, count] of entries) {
+        if (remaining <= 0) break;
+        const rows = groups[action] || [];
+        const shownRows = rows.slice(0, remaining);
+        remaining -= shownRows.length;
+        shownTotal += shownRows.length;
+        html.push(`
+          <div class="event-group">
+            <div class="event-group-head">
+              <div class="event-action" title="${escapeHtml(action)}">${escapeHtml(action)}</div>
+              <span class="badge action">${formatNumber(count)} evt</span>
+            </div>
+            <div class="event-row-chips">
+              ${shownRows.map((rowNumber) => `<button class="row-chip ${state.selectedEventRow === rowNumber ? "selected" : ""}" type="button" data-event-row="${rowNumber}">#${formatNumber(rowNumber)}</button>`).join("")}
+            </div>
+          </div>
+        `);
+      }
+
+      const hiddenTotal = Math.max(0, totalRows - shownTotal);
+      return `
+        <div class="details-subhead">Event Rows</div>
+        <div class="event-groups">${html.join("")}</div>
+        ${hiddenTotal ? `<button class="button ghost" type="button" data-more-events>さらに ${formatNumber(Math.min(400, hiddenTotal))} 件表示</button>` : ""}
+      `;
+    }
+
+    function renderSelectedEventData() {
+      const rowNumber = state.selectedEventRow;
+      if (!rowNumber) {
+        return `
+          <div class="details-subhead">Selected Event Data</div>
+          <div class="notice">行番号を選択すると、そのイベントの全列データを表示します。</div>
+        `;
+      }
+
+      if (state.selectedEventLoading) {
+        return `
+          <div class="details-subhead">Selected Event Data</div>
+          <div class="notice">行 #${formatNumber(rowNumber)} を読み込み中です。</div>
+        `;
+      }
+
+      if (state.selectedEventError) {
+        return `
+          <div class="details-subhead">Selected Event Data</div>
+          <div class="notice danger">${escapeHtml(state.selectedEventError)}</div>
+        `;
+      }
+
+      const data = state.selectedEventData;
+      if (!data || data.rowNumber !== rowNumber) {
+        return `
+          <div class="details-subhead">Selected Event Data</div>
+          <div class="notice">行 #${formatNumber(rowNumber)} のデータはまだ読み込まれていません。</div>
+        `;
+      }
+
+      return `
+        <div class="raw-event">
+          <div class="details-subhead">Selected Event Data: #${formatNumber(rowNumber)}</div>
+          <div class="raw-field-list">
+            ${data.columns.map((column) => `
+              <div class="raw-field">
+                <div class="raw-key">
+                  <strong>${escapeHtml(column.name)}</strong>
+                  <span class="raw-index">Column ${formatNumber(column.index)}</span>
+                </div>
+                <div class="raw-value mono">${escapeHtml(column.value || "")}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    function loadEventRow(rowNumber) {
+      if (!state.file) return;
+      if (state.rowWorker) {
+        state.rowWorker.terminate();
+        if (state.rowWorker.revokeObjectUrl) state.rowWorker.revokeObjectUrl();
+        state.rowWorker = null;
+      }
+
+      const requestId = state.rowRequestId + 1;
+      state.rowRequestId = requestId;
+      state.selectedEventRow = rowNumber;
+      state.selectedEventData = null;
+      state.selectedEventLoading = true;
+      state.selectedEventError = "";
+      renderDetails();
+
+      const worker = createWorker();
+      state.rowWorker = worker;
+
+      worker.onmessage = (event) => {
+        const message = event.data;
+        if (requestId !== state.rowRequestId) return;
+        if (message.type === "rowResult") {
+          state.selectedEventData = message;
+          state.selectedEventLoading = false;
+          state.selectedEventError = "";
+        } else if (message.type === "rowError") {
+          state.selectedEventData = null;
+          state.selectedEventLoading = false;
+          state.selectedEventError = message.message || "イベント行の読み込みに失敗しました。";
+        }
+        if (state.rowWorker === worker) {
+          worker.terminate();
+          state.rowWorker = null;
+        }
+        renderDetails();
+      };
+
+      worker.onerror = (error) => {
+        if (requestId !== state.rowRequestId) return;
+        state.selectedEventData = null;
+        state.selectedEventLoading = false;
+        state.selectedEventError = error.message || "イベント行の読み込みに失敗しました。";
+        if (state.rowWorker === worker) {
+          worker.terminate();
+          if (worker.revokeObjectUrl) worker.revokeObjectUrl();
+          state.rowWorker = null;
+        }
+        renderDetails();
+      };
+
+      worker.postMessage({
+        type: "readRow",
+        file: state.file,
+        config: {
+          delimiter: state.delimiter,
+          encoding: state.encoding,
+          rowNumber
+        }
+      });
+    }
+
+    function renderDetails() {
+      const node = state.nodeById.get(state.selectedId);
+      if (!node) {
+        els.detailsBody.innerHTML = `<div class="empty">ノードを選択すると詳細を表示します。</div>`;
+        return;
+      }
+      const autoEventRow = !state.selectedEventRow && !state.selectedEventLoading ? singleEventRow(node) : null;
+      const actions = Object.entries(node.actionTypes || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => `${name} (${formatNumber(count)})`)
+        .join(", ");
+      const parent = node.parentId != null ? state.nodeById.get(node.parentId) : null;
+      const rows = [
+        ["Device", node.deviceLabel || node.deviceId],
+        ["PID", node.pid],
+        ["Unique", node.uniqueId],
+        ["Created", node.creationTime],
+        ["First", node.firstSeen],
+        ["Last", node.lastSeen],
+        ["User", node.account],
+        ["Path", node.path],
+        ["Command", node.commandLine],
+        ["Parent", parent ? `${parent.name}${parent.pid ? ` (PID ${parent.pid})` : ""}` : "なし"],
+        ["Reason", node.parentReason],
+        ["Confidence", node.parentConfidence ? `${Math.round(node.parentConfidence * 100)}%` : ""],
+        ["Events", formatNumber(node.eventCount)],
+        ["Children", `${formatNumber(node.childCount)} direct / ${formatNumber(node.descendantCount)} descendants`],
+        ["Actions", actions]
+      ];
+      els.detailsBody.innerHTML = `
+        <div class="detail-title">
+          <strong>${escapeHtml(node.name)}</strong>
+          <span class="hint">${escapeHtml(node.inferred ? "推定または集約ノード" : "ログ内で観測されたプロセス")}</span>
+        </div>
+        <div class="kv">
+          ${rows.map(([key, value]) => `
+            <div class="kv-row">
+              <div class="kv-key">${escapeHtml(key)}</div>
+              <div class="kv-value ${key === "Command" || key === "Path" || key === "Unique" ? "mono" : ""}">${escapeHtml(value || "-")}</div>
+            </div>
+          `).join("")}
+        </div>
+        ${renderEventRows(node)}
+        ${renderSelectedEventData()}
+      `;
+      els.detailsBody.querySelectorAll("[data-event-row]").forEach((button) => {
+        button.addEventListener("click", () => {
+          loadEventRow(Number(button.dataset.eventRow));
+        });
+      });
+      const moreButton = els.detailsBody.querySelector("[data-more-events]");
+      if (moreButton) {
+        moreButton.addEventListener("click", () => {
+          state.detailEventLimit += 400;
+          renderDetails();
+        });
+      }
+      if (autoEventRow) loadEventRow(autoEventRow);
+    }
+
+    function expandAll() {
+      if (!state.graph) return;
+      for (const node of state.graph.nodes) {
+        if (node.children.length) state.expanded.add(node.id);
+      }
+      renderTree();
+    }
+
+    function collapseAll() {
+      if (!state.graph) return;
+      state.expanded = new Set();
+      renderTree();
+    }
+
+    function downloadText(filename, text, type) {
+      const blob = new Blob([text], { type });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvEscape(value) {
+      const text = String(value == null ? "" : value);
+      if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+      return text;
+    }
+
+    function exportCsv() {
+      if (!state.graph) return;
+      const lines = [[
+        "parent_id", "parent_name", "parent_pid", "child_id", "child_name", "child_pid",
+        "device", "confidence", "reason", "child_first_seen", "child_command_line"
+      ].join(",")];
+      for (const child of state.graph.nodes) {
+        if (child.parentId == null) continue;
+        const parent = state.nodeById.get(child.parentId);
+        lines.push([
+          parent.id,
+          parent.name,
+          parent.pid,
+          child.id,
+          child.name,
+          child.pid,
+          child.deviceLabel,
+          child.parentConfidence,
+          child.parentReason,
+          child.firstSeen,
+          child.commandLine
+        ].map(csvEscape).join(","));
+      }
+      downloadText("process-tree-edges.csv", lines.join("\r\n"), "text/csv;charset=utf-8");
+    }
+
+    function exportJson() {
+      if (!state.graph) return;
+      downloadText("process-tree.json", JSON.stringify(state.graph, null, 2), "application/json;charset=utf-8");
+    }
+
+    function sampleCsv() {
+      return [
+        "Timestamp,DeviceName,DeviceId,ActionType,FileName,FolderPath,ProcessId,ProcessCreationTime,ProcessCommandLine,AccountName,InitiatingProcessFileName,InitiatingProcessFolderPath,InitiatingProcessId,InitiatingProcessCreationTime,InitiatingProcessCommandLine",
+        "2026-04-27T00:01:01Z,PC-01,dev-1,ProcessCreated,cmd.exe,C:\\\\Windows\\\\System32\\\\cmd.exe,4400,2026-04-27T00:01:01Z,\"cmd.exe /c whoami\",alice,explorer.exe,C:\\\\Windows\\\\explorer.exe,3320,2026-04-27T00:00:15Z,explorer.exe",
+        "2026-04-27T00:01:04Z,PC-01,dev-1,ProcessCreated,powershell.exe,C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe,4512,2026-04-27T00:01:04Z,\"powershell -NoP -EncodedCommand AAA\",alice,cmd.exe,C:\\\\Windows\\\\System32\\\\cmd.exe,4400,2026-04-27T00:01:01Z,\"cmd.exe /c whoami\"",
+        "2026-04-27T00:01:08Z,PC-01,dev-1,ProcessCreated,rundll32.exe,C:\\\\Windows\\\\System32\\\\rundll32.exe,4800,2026-04-27T00:01:08Z,\"rundll32.exe shell32.dll,Control_RunDLL\",alice,powershell.exe,C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe,4512,2026-04-27T00:01:04Z,\"powershell -NoP -EncodedCommand AAA\"",
+        "2026-04-27T00:02:00Z,PC-01,dev-1,ProcessCreated,notepad.exe,C:\\\\Windows\\\\System32\\\\notepad.exe,5100,2026-04-27T00:02:00Z,notepad.exe,alice,explorer.exe,C:\\\\Windows\\\\explorer.exe,3320,2026-04-27T00:00:15Z,explorer.exe",
+        "2026-04-27T00:03:00Z,PC-02,dev-2,ProcessCreated,svchost.exe,C:\\\\Windows\\\\System32\\\\svchost.exe,900,2026-04-27T00:03:00Z,\"svchost.exe -k netsvcs\",SYSTEM,services.exe,C:\\\\Windows\\\\System32\\\\services.exe,720,2026-04-27T00:00:06Z,services.exe"
+      ].join("\r\n");
+    }
+
+    function debounce(fn, wait) {
+      let timer = 0;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), wait);
+      };
+    }
+
+    els.fileInput.addEventListener("change", () => {
+      const file = els.fileInput.files && els.fileInput.files[0];
+      if (file) loadFile(file);
+    });
+
+    for (const eventName of ["dragenter", "dragover"]) {
+      els.dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        els.dropZone.classList.add("dragging");
+      });
+    }
+
+    for (const eventName of ["dragleave", "drop"]) {
+      els.dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        els.dropZone.classList.remove("dragging");
+      });
+    }
+
+    els.dropZone.addEventListener("drop", (event) => {
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (file) loadFile(file);
+    });
+
+    els.detailsResizer.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      beginDetailsResize(event.clientX);
+    });
+    els.detailsResizer.addEventListener("dblclick", () => {
+      resetDetailsWidth();
+    });
+    els.detailsResizer.addEventListener("keydown", (event) => {
+      if (window.matchMedia("(max-width: 1180px)").matches) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        applyDetailsWidth((state.detailsWidth || els.detailsPane.getBoundingClientRect().width) + 24);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        applyDetailsWidth((state.detailsWidth || els.detailsPane.getBoundingClientRect().width) - 24);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        applyDetailsWidth(detailsResizeBounds().minWidth);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        applyDetailsWidth(detailsResizeBounds().maxWidth);
+      }
+    });
+    window.addEventListener("resize", () => {
+      if (window.matchMedia("(max-width: 1180px)").matches) {
+        document.documentElement.style.removeProperty("--details-width");
+      } else {
+        applyDetailsWidth(state.detailsWidth);
+      }
+    });
+
+    els.analyzeButton.addEventListener("click", startAnalysis);
+    els.cancelButton.addEventListener("click", stopAnalysis);
+    els.expandButton.addEventListener("click", expandAll);
+    els.collapseButton.addEventListener("click", collapseAll);
+    els.searchInput.addEventListener("input", debounce(renderTree, 160));
+    els.searchMode.addEventListener("change", renderTree);
+    els.sortMode.addEventListener("change", renderTree);
+    els.childLimit.addEventListener("change", () => {
+      state.childReveal.clear();
+      renderTree();
+    });
+    els.encodingSelect.addEventListener("change", async () => {
+      if (!state.file || state.worker) return;
+      await loadFile(state.file);
+    });
+    els.exportCsvButton.addEventListener("click", exportCsv);
+    els.exportJsonButton.addEventListener("click", exportJson);
+    els.sampleButton.addEventListener("click", async () => {
+      const file = new File([sampleCsv()], "sample-mde-process-events.csv", { type: "text/csv" });
+      await loadFile(file);
+      startAnalysis();
+    });
+
+    resetDetailsWidth();
+    renderMapping();
+  </script>
+</body>
+</html>
